@@ -19,7 +19,7 @@ struct SessionPhoto: Identifiable {
     let localIdentifier: String
 }
 
-// 2. ✅ 新增：独立的硬件管理器 (不绑定 MainActor，专门干后台的活)
+// 2. 独立的硬件管理器 (不绑定 MainActor，专门干后台的活)
 private class CameraService: NSObject, AVCapturePhotoCaptureDelegate {
     let session = AVCaptureSession()
     let photoOutput = AVCapturePhotoOutput()
@@ -32,7 +32,7 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate {
     /// 变焦范围变化时回调 (min, max)，主线程
     var onZoomRangeChanged: ((CGFloat, CGFloat) -> Void)?
     
-    /// 当前设备支持的变焦范围（在 configureSession / switchCamera 后更新）
+    /// 当前设备支持的变焦范围
     private(set) var minZoomFactor: CGFloat = 1.0
     private(set) var maxZoomFactor: CGFloat = 1.0
     
@@ -117,13 +117,8 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate {
     }
     
     func capturePhoto(lightingMode: LightingMode, soundManager: SoundManager, isSoundEnabled: Bool) {
-        // 这里的逻辑稍微调整，把声音播放放在 Service 外面或者传参进来
-        // 为了简化，我们只负责拍照和灯光
-        
-        // 拍照配置
         let settings = AVCapturePhotoSettings()
         settings.flashMode = .off
-        // ✅ 修复 iOS 16 警告：使用 maxPhotoDimensions
         settings.maxPhotoDimensions = photoOutput.maxPhotoDimensions
         
         if photoOutput.availablePhotoCodecTypes.contains(.hevc) {
@@ -158,7 +153,6 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate {
     }
     
     func getTorchState() -> Bool {
-        // 简单判断，不严谨但够用
         return currentInput?.device.torchMode == .on
     }
     
@@ -177,7 +171,6 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate {
         
         if session.canAddOutput(photoOutput) {
             session.addOutput(photoOutput)
-            // ✅ 修复：iOS 16+ 高清配置
             if let maxDimension = backCamera.activeFormat.supportedMaxPhotoDimensions.last {
                 photoOutput.maxPhotoDimensions = maxDimension
             }
@@ -193,7 +186,7 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate {
     }
 }
 
-// 3. ✅ 主 ViewModel (只负责 UI 和逻辑协调，不直接碰硬件)
+// 3. 主 ViewModel (只负责 UI 和逻辑协调，不直接碰硬件)
 @MainActor
 class CameraViewModel: ObservableObject {
     
@@ -201,28 +194,27 @@ class CameraViewModel: ObservableObject {
     @Published var lightingMode: LightingMode = .off
     @Published var isSoundEnabled: Bool = true
     
-    /// 当前变焦倍数 (1.0 = 无变焦)，用于捏合与滑块
+    /// 当前变焦倍数
     @Published var zoomFactor: CGFloat = 1.0
-    /// 设备支持的最大变焦倍数，用于滑块范围
+    /// 最大变焦倍数
     @Published var maxZoomFactor: CGFloat = 1.0
     
-    /// 最近一张拍摄的照片缩略图（左下角预览）
+    /// 最近一张拍摄的照片缩略图
     @Published var lastCapturedThumbnail: UIImage?
-    /// 本次会话拍摄的所有照片（用于应用内「本次拍摄」列表）
+    /// 本次会话拍摄的所有照片
     @Published var sessionPhotos: [SessionPhoto] = []
     
     var soundManager = SoundManager()
     
     // 持有后台服务
     private let cameraService = CameraService()
-    // 暴露 Session 给预览层
     var session: AVCaptureSession { cameraService.session }
     
     private var audioPlayer: AVAudioPlayer?
     private var strobeTimer: Timer?
     
     init() {
-        // 绑定回调：当后台状态改变时，更新 UI
+        // 绑定后台状态回调
         cameraService.onSessionRunningChanged = { [weak self] isRunning in
             Task { @MainActor in self?.isSessionRunning = isRunning }
         }
@@ -258,14 +250,15 @@ class CameraViewModel: ObservableObject {
         }
     }
     
-    /// 设置变焦（会 clamp 到 1.0...maxZoomFactor 并同步到设备）
     func setZoom(_ factor: CGFloat) {
         let clamped = min(max(1.0, factor), maxZoomFactor)
         zoomFactor = clamped
         cameraService.setZoomFactor(clamped)
     }
     
-    /// 从「本次拍摄」列表和系统相册中删除一张照片
+    // MARK: - 删除功能
+    
+    /// 删除单张
     func deleteSessionPhoto(localIdentifier: String) {
         sessionPhotos.removeAll { $0.localIdentifier == localIdentifier }
         let assets = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil)
@@ -275,7 +268,28 @@ class CameraViewModel: ObservableObject {
         }
     }
     
-    /// 生成缩略图（节省内存）
+    /// ✅ 新增：批量删除多张照片
+    func deleteSessionPhotos(localIdentifiers: [String]) {
+        // 1. 获取 PHAssets
+        let assets = PHAsset.fetchAssets(withLocalIdentifiers: localIdentifiers, options: nil)
+        guard assets.count > 0 else { return }
+        
+        // 2. 请求删除 (这会触发系统唯一的那个弹窗)
+        PHPhotoLibrary.shared().performChanges {
+            PHAssetChangeRequest.deleteAssets(assets)
+        } completionHandler: { success, error in
+            if success {
+                // 3. 删除成功后，在主线程更新 UI 数据源
+                Task { @MainActor in
+                    self.sessionPhotos.removeAll { localIdentifiers.contains($0.localIdentifier) }
+                }
+            } else {
+                print("批量删除失败: \(String(describing: error))")
+            }
+        }
+    }
+    
+    /// 生成缩略图
     private static func thumbnail(from image: UIImage, maxSize: CGFloat) -> UIImage? {
         let w = image.size.width
         let h = image.size.height
@@ -324,10 +338,6 @@ class CameraViewModel: ObservableObject {
         strobeTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
             guard let self = self else { return }
             
-            // 这里我们无法直接读取 currentInput，需要通过 service 控制
-            // 为了闪烁效果，我们需要一个简单的 toggle
-            // 这里简化逻辑：我们不需要知道当前状态，只需要发命令“开”或“关”
-            // 用 flashCount 的奇偶性来切换
             let shouldBeOn = (flashCount % 2 == 0)
             self.cameraService.setTorchAsync(on: shouldBeOn)
             
@@ -339,14 +349,11 @@ class CameraViewModel: ObservableObject {
                 let currentMode = self.lightingMode
                 let shouldKeepLightOn = (currentMode == .strobeLightOn)
                 
-                // 稳态补光
                 self.cameraService.setTorchAsync(on: shouldKeepLightOn)
                 
-                // 延迟拍照
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                     self.cameraService.capturePhoto(lightingMode: currentMode, soundManager: self.soundManager, isSoundEnabled: self.isSoundEnabled)
                     
-                    // 拍完收尾
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                         if self.lightingMode == .strobeLightOn {
                             self.cameraService.setTorchAsync(on: false)

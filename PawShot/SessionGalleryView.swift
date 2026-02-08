@@ -1,60 +1,106 @@
 import SwiftUI
 import Photos
 
-/// 用于 sheet(item:) 的轻量包装，避免用含 UIImage 的 SessionPhoto 做 binding
+/// 用于 sheet 的轻量包装
 private struct PhotoSheetItem: Identifiable {
     let id: String
     var localIdentifier: String { id }
 }
 
-/// 本次拍摄列表：网格展示、点击查看大图、菜单删除
 struct SessionGalleryView: View {
     @ObservedObject var cameraVM: CameraViewModel
     @Environment(\.dismiss) var dismiss
-    /// 显式关闭回调，确保点「完成」能回到主页面
     var onDismiss: (() -> Void)?
     
+    // 状态：批量选择模式
+    @State private var isEditing = false // 是否处于选择模式
+    @State private var selectedItems = Set<String>() // 已选中的照片 ID
+    
+    // 状态：单张大图查看
     @State private var selectedSheetItem: PhotoSheetItem?
     
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 3)
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 3)
     
     var body: some View {
         NavigationStack {
-            Group {
+            VStack(spacing: 0) {
+                // MARK: - 1. 内容区域
                 if cameraVM.sessionPhotos.isEmpty {
-                    VStack(spacing: 12) {
-                        Image(systemName: "photo.on.rectangle.angled")
-                            .font(.system(size: 56))
-                            .foregroundColor(.secondary)
-                        Text("暂无拍摄照片")
-                            .font(.headline)
-                        Text("拍几张宠物照后会显示在这里")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    emptyStateView
                 } else {
                     ScrollView {
-                        LazyVGrid(columns: columns, spacing: 8) {
+                        LazyVGrid(columns: columns, spacing: 2) {
                             ForEach(cameraVM.sessionPhotos) { item in
-                                cell(for: item)
+                                PhotoGridCell(
+                                    item: item,
+                                    isEditing: isEditing,
+                                    isSelected: selectedItems.contains(item.localIdentifier),
+                                    onTap: {
+                                        if isEditing {
+                                            toggleSelection(for: item.localIdentifier)
+                                        } else {
+                                            // 非编辑模式，点击查看大图
+                                            selectedSheetItem = PhotoSheetItem(id: item.localIdentifier)
+                                        }
+                                    }
+                                )
                             }
                         }
+                        .padding(.top, 2)
+                    }
+                }
+                
+                // MARK: - 2. 底部工具栏 (仅在编辑模式显示)
+                if isEditing {
+                    VStack {
+                        Divider()
+                        HStack {
+                            Text("已选 \(selectedItems.count) 张")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            
+                            Spacer()
+                            
+                            // 🗑️ 批量删除按钮
+                            Button(role: .destructive) {
+                                performBatchDelete()
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.title3)
+                            }
+                            .disabled(selectedItems.isEmpty)
+                        }
                         .padding()
+                        .background(Color(UIColor.systemBackground))
                     }
                 }
             }
-            .navigationTitle("本次拍摄")
+            .navigationTitle(isEditing ? "选择照片" : "本次拍摄")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("完成") {
-                        onDismiss?()
-                        dismiss()
+                // 左侧：关闭
+                ToolbarItem(placement: .cancellationAction) {
+                    if !isEditing {
+                        Button("关闭") {
+                            onDismiss?()
+                            dismiss()
+                        }
+                    }
+                }
+                
+                // 右侧：选择/完成
+                ToolbarItem(placement: .primaryAction) {
+                    if !cameraVM.sessionPhotos.isEmpty {
+                        Button(isEditing ? "完成" : "选择") {
+                            withAnimation {
+                                isEditing.toggle()
+                                selectedItems.removeAll() // 退出编辑时清空选择
+                            }
+                        }
                     }
                 }
             }
+            // MARK: - 单张大图查看 Sheet
             .sheet(item: $selectedSheetItem) { item in
                 FullPhotoView(
                     localIdentifier: item.localIdentifier,
@@ -62,7 +108,10 @@ struct SessionGalleryView: View {
                     onDelete: {
                         let id = item.localIdentifier
                         selectedSheetItem = nil
-                        DispatchQueue.main.async {
+                        
+                        // ✅ 修复点：这里直接用 cameraVM，千万不要加 $
+                        // 使用 DispatchQueue 避免 UI 冲突
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                             cameraVM.deleteSessionPhoto(localIdentifier: id)
                         }
                     }
@@ -71,36 +120,93 @@ struct SessionGalleryView: View {
         }
     }
     
-    private func cell(for item: SessionPhoto) -> some View {
-        Button {
-            selectedSheetItem = PhotoSheetItem(id: item.localIdentifier)
-        } label: {
-            Image(uiImage: item.thumbnail)
-                .resizable()
-                .aspectRatio(contentMode: .fill)
-                .frame(minWidth: 0, minHeight: 0)
-                .aspectRatio(1, contentMode: .fit)
-                .clipped()
-                .cornerRadius(8)
+    // MARK: - 辅助逻辑
+    
+    private var emptyStateView: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "photo.on.rectangle.angled")
+                .font(.system(size: 56))
+                .foregroundColor(.secondary)
+            Text("暂无拍摄照片")
+                .font(.headline)
+            Text("拍几张宠物照后会显示在这里")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
         }
-        .buttonStyle(.plain)
-        .contentShape(Rectangle())
-        .contextMenu {
-            Button(role: .destructive) {
-                cameraVM.deleteSessionPhoto(localIdentifier: item.localIdentifier)
-            } label: {
-                Label("删除", systemImage: "trash")
-            }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    
+    private func toggleSelection(for id: String) {
+        if selectedItems.contains(id) {
+            selectedItems.remove(id)
+        } else {
+            selectedItems.insert(id)
+        }
+    }
+    
+    private func performBatchDelete() {
+        let idsToDelete = Array(selectedItems)
+        // 调用 ViewModel 的批量删除
+        cameraVM.deleteSessionPhotos(localIdentifiers: idsToDelete)
+        
+        // 删除后退出编辑模式
+        withAnimation {
+            isEditing = false
+            selectedItems.removeAll()
         }
     }
 }
 
-/// 用于在闭包里共享「已取消」状态，避免 sheet 关闭后仍更新 UI 导致崩溃
+// MARK: - 子视图：单个照片格子
+struct PhotoGridCell: View {
+    let item: SessionPhoto
+    let isEditing: Bool
+    let isSelected: Bool
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            ZStack(alignment: .bottomTrailing) {
+                // 1. 照片缩略图
+                Image(uiImage: item.thumbnail)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+                    .aspectRatio(1, contentMode: .fit)
+                    .clipped()
+                    .opacity(isEditing && !isSelected ? 0.7 : 1.0) // 未选中时稍微变暗
+                
+                // 2. 选择勾选框 (仅编辑模式)
+                if isEditing {
+                    ZStack {
+                        Circle()
+                            .fill(isSelected ? Color.blue : Color.black.opacity(0.4))
+                            .frame(width: 24, height: 24)
+                        
+                        if isSelected {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.white)
+                        } else {
+                            Circle()
+                                .stroke(Color.white, lineWidth: 2)
+                                .frame(width: 22, height: 22)
+                        }
+                    }
+                    .padding(6)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - 子视图：大图查看
 private final class LoadCancellation {
     var isCancelled = false
 }
 
-// MARK: - 大图查看（从相册拉取原图）
 private struct FullPhotoView: View {
     let localIdentifier: String
     let onDismiss: () -> Void
@@ -168,4 +274,3 @@ private struct FullPhotoView: View {
         }
     }
 }
-

@@ -7,9 +7,9 @@ struct SoundLibraryView: View {
     // 状态管理
     @State private var showNameAlert = false
     @State private var recordingName = ""
-    @State private var isAnimating = false
+    @State private var isAnimating = false // 用于 iOS 16 兼容动画
     
-    // ✅ 新增：当前正在编辑的声音对象 (用于触发 Sheet)
+    // 当前正在编辑的声音对象
     @State private var editingItem: SoundItem?
     
     var body: some View {
@@ -20,10 +20,11 @@ struct SoundLibraryView: View {
                     if soundManager.isRecording {
                         // 🔴 正在录音状态
                         HStack {
+                            // ✅ 修复：使用 opacity 动画替代 symbolEffect (兼容 iOS 16)
                             Image(systemName: "waveform.path.ecg")
                                 .foregroundColor(.red)
                                 .font(.title)
-                                .opacity(isAnimating ? 0.5 : 1.0) // 呼吸动画
+                                .opacity(isAnimating ? 0.5 : 1.0)
                                 .onAppear {
                                     withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
                                         isAnimating = true
@@ -38,11 +39,8 @@ struct SoundLibraryView: View {
                             
                             // 🛑 立即停止按钮
                             Button("停止") {
-                                // 1. 马上切断硬件录音
                                 soundManager.stopRecordingImmediately()
-                                // 2. 停止动画
                                 isAnimating = false
-                                // 3. 弹出命名框
                                 showNameAlert = true
                             }
                             .buttonStyle(.borderedProminent)
@@ -61,7 +59,6 @@ struct SoundLibraryView: View {
                                     Text("点击开始录音")
                                         .foregroundColor(.primary)
                                     
-                                    // 权限提示
                                     if !soundManager.permissionGranted {
                                         Text("需要麦克风权限")
                                             .font(.caption)
@@ -81,7 +78,6 @@ struct SoundLibraryView: View {
                     } else {
                         ForEach(soundManager.sounds) { item in
                             HStack {
-                                // ✅ 勾选按钮 (加入随机播放池)
                                 Button(action: {
                                     soundManager.toggleSelection(for: item)
                                 }) {
@@ -89,11 +85,10 @@ struct SoundLibraryView: View {
                                         .foregroundColor(item.isSelected ? .green : .gray)
                                         .font(.title2)
                                 }
-                                .buttonStyle(.plain) // 防止点击穿透
+                                .buttonStyle(.plain)
                                 
-                                // ✅ 编辑入口 (点击名字进入编辑器)
                                 Button(action: {
-                                    editingItem = item // 赋值后自动弹出 Sheet
+                                    editingItem = item
                                 }) {
                                     HStack {
                                         VStack(alignment: .leading) {
@@ -104,22 +99,18 @@ struct SoundLibraryView: View {
                                                 .font(.caption)
                                                 .foregroundColor(.secondary)
                                         }
-                                        
                                         Spacer()
-                                        
-                                        // 编辑图标提示
                                         if !item.isSystem {
                                             Image(systemName: "scissors")
                                                 .font(.caption)
                                                 .foregroundColor(.blue.opacity(0.6))
                                         } else {
-                                            // 系统声音显示锁或者是只读
                                             Image(systemName: "lock.fill")
                                                 .font(.caption2)
                                                 .foregroundColor(.gray.opacity(0.3))
                                         }
                                     }
-                                    .contentShape(Rectangle()) // 扩大点击区域
+                                    .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -134,8 +125,6 @@ struct SoundLibraryView: View {
                     Button("完成") { dismiss() }
                 }
             }
-            // MARK: - 弹窗逻辑
-            // 1. 命名保存弹窗
             .alert("保存录音", isPresented: $showNameAlert) {
                 TextField("输入名字", text: $recordingName)
                 Button("保存") {
@@ -146,9 +135,7 @@ struct SoundLibraryView: View {
                     soundManager.discardLastRecording()
                 }
             }
-            // 2. 音频编辑器弹窗
             .sheet(item: $editingItem) { item in
-                // 这里调用我们刚刚写的 AudioEditorView
                 AudioEditorView(soundItem: item, soundManager: soundManager)
             }
         }
