@@ -4,8 +4,8 @@ struct ContentView: View {
     // 初始化相机逻辑核心
     @StateObject private var cameraVM = CameraViewModel()
     
-    // ✅ 新增状态：控制是否显示声音库
     @State private var showSoundLibrary = false
+    @State private var showSessionGallery = false
     // 变焦捏合：手势开始时记录的变焦值
     @State private var pinchStartZoom: CGFloat = 1.0
     @State private var isPinching = false
@@ -98,10 +98,40 @@ struct ContentView: View {
                 }
                 .frame(maxHeight: .infinity)
                 
-                // MARK: - 底部操作栏 (声音库 | 快门 | 翻转)
-                HStack {
+                // MARK: - 底部操作栏 (缩略图 | 声音库 | 快门 | 翻转)
+                HStack(spacing: 16) {
+                    // 📷 左下角：最近一张照片缩略图，点击查看本次拍摄列表
+                    Button(action: {
+                        let generator = UIImpactFeedbackGenerator(style: .light)
+                        generator.impactOccurred()
+                        showSessionGallery = true
+                    }) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.black.opacity(0.6))
+                                .frame(width: 56, height: 56)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(Color.white.opacity(0.5), lineWidth: 1)
+                                )
+                            if let thumb = cameraVM.lastCapturedThumbnail {
+                                Image(uiImage: thumb)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(width: 56, height: 56)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                            } else {
+                                Image(systemName: "photo.on.rectangle.angled")
+                                    .font(.title2)
+                                    .foregroundColor(.white.opacity(0.8))
+                            }
+                        }
+                        .contentShape(Rectangle())
+                        .frame(width: 56, height: 56)
+                    }
+                    .buttonStyle(.plain)
                     
-                    // 🎵 左侧：声音库入口
+                    // 🎵 声音库入口
                     Button(action: {
                         showSoundLibrary = true
                     }) {
@@ -114,8 +144,7 @@ struct ContentView: View {
                         }
                         .foregroundColor(.white)
                     }
-                    .padding(.leading, 30)
-                    .frame(width: 80) // 固定宽度保持布局平衡
+                    .frame(width: 80)
                     
                     Spacer()
                     
@@ -155,6 +184,7 @@ struct ContentView: View {
                     .padding(.trailing, 30)
                     .frame(width: 80) // 固定宽度保持布局平衡
                 }
+                .padding(.leading, 20)
                 .padding(.bottom, 40)
             }
         }
@@ -162,10 +192,11 @@ struct ContentView: View {
         .onAppear { cameraVM.startSession() }
         .onDisappear { cameraVM.stopSession() }
         
-        // ✅ 弹窗：声音库界面
         .sheet(isPresented: $showSoundLibrary) {
-            // 将 ViewModel 里的管理器传给 UI
             SoundLibraryView(soundManager: cameraVM.soundManager)
+        }
+        .sheet(isPresented: $showSessionGallery) {
+            SessionGalleryView(cameraVM: cameraVM, onDismiss: { showSessionGallery = false })
         }
     }
     

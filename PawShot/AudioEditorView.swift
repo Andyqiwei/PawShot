@@ -203,10 +203,18 @@ struct AudioEditorView: View {
         }
         
         let asset = AVAsset(url: url)
-        duration = asset.duration.seconds
-        endTime = duration
-        
-        extractWaveform(from: url)
+        Task {
+            do {
+                let durationTime = try await asset.load(.duration)
+                await MainActor.run {
+                    duration = durationTime.seconds
+                    endTime = duration
+                }
+                extractWaveform(from: url)
+            } catch {
+                await MainActor.run { duration = 0 }
+            }
+        }
     }
     
     func extractWaveform(from url: URL) {

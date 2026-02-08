@@ -2,6 +2,7 @@ import SwiftUI
 import AVFoundation
 import Photos
 import Combine
+import UIKit
 
 // 1. 模式定义 (线程安全)
 enum LightingMode: Sendable {
@@ -9,6 +10,13 @@ enum LightingMode: Sendable {
     case constant
     case strobeLightOn
     case strobeLightOff
+}
+
+/// 本次会话中拍摄的一张照片（缩略图 + 系统相册中的标识，用于应用内列表与删除）
+struct SessionPhoto: Identifiable {
+    let id = UUID()
+    let thumbnail: UIImage
+    let localIdentifier: String
 }
 
 // 2. ✅ 新增：独立的硬件管理器 (不绑定 MainActor，专门干后台的活)
@@ -198,6 +206,11 @@ class CameraViewModel: ObservableObject {
     /// 设备支持的最大变焦倍数，用于滑块范围
     @Published var maxZoomFactor: CGFloat = 1.0
     
+    /// 最近一张拍摄的照片缩略图（左下角预览）
+    @Published var lastCapturedThumbnail: UIImage?
+    /// 本次会话拍摄的所有照片（用于应用内「本次拍摄」列表）
+    @Published var sessionPhotos: [SessionPhoto] = []
+    
     var soundManager = SoundManager()
     
     // 持有后台服务
@@ -214,11 +227,23 @@ class CameraViewModel: ObservableObject {
             Task { @MainActor in self?.isSessionRunning = isRunning }
         }
         
-        cameraService.onPhotoCaptured = { image in
+        cameraService.onPhotoCaptured = { [weak self] image in
+            let thumb = Self.thumbnail(from: image, maxSize: 120)
             PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
-                if status == .authorized || status == .limited {
-                    PHPhotoLibrary.shared().performChanges {
-                        PHAssetChangeRequest.creationRequestForAsset(from: image)
+                guard status == .authorized || status == .limited else {
+                    Task { @MainActor in self?.lastCapturedThumbnail = thumb }
+                    return
+                }
+                var savedLocalId: String?
+                PHPhotoLibrary.shared().performChanges {
+                    let request = PHAssetChangeRequest.creationRequestForAsset(from: image)
+                    savedLocalId = request.placeholderForCreatedAsset?.localIdentifier
+                } completionHandler: { success, _ in
+                    Task { @MainActor in
+                        self?.lastCapturedThumbnail = thumb
+                        if success, let localId = savedLocalId, let thumb = thumb {
+                            self?.sessionPhotos.append(SessionPhoto(thumbnail: thumb, localIdentifier: localId))
+                        }
                     }
                 }
             }
@@ -238,6 +263,30 @@ class CameraViewModel: ObservableObject {
         let clamped = min(max(1.0, factor), maxZoomFactor)
         zoomFactor = clamped
         cameraService.setZoomFactor(clamped)
+    }
+    
+    /// 从「本次拍摄」列表和系统相册中删除一张照片
+    func deleteSessionPhoto(localIdentifier: String) {
+        sessionPhotos.removeAll { $0.localIdentifier == localIdentifier }
+        let assets = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil)
+        guard let asset = assets.firstObject else { return }
+        PHPhotoLibrary.shared().performChanges {
+            PHAssetChangeRequest.deleteAssets([asset] as NSArray)
+        }
+    }
+    
+    /// 生成缩略图（节省内存）
+    private static func thumbnail(from image: UIImage, maxSize: CGFloat) -> UIImage? {
+        let w = image.size.width
+        let h = image.size.height
+        guard w > 0, h > 0 else { return image }
+        let ratio = min(maxSize / w, maxSize / h)
+        if ratio >= 1 { return image }
+        let newSize = CGSize(width: w * ratio, height: h * ratio)
+        let renderer = UIGraphicsImageRenderer(size: newSize)
+        return renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: newSize))
+        }
     }
     
     func startSession() { cameraService.start() }
