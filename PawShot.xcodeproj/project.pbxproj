@@ -271,6 +271,7 @@
 				INFOPLIST_KEY_NSCameraUsageDescription = "我们需要访问相机以控制闪光灯来吸引狗狗注意力";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "我们需要访问麦克风以录制您吸引狗狗的声音";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "我们需要权限将拍摄的狗狗照片保存到您的相册";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "我们需要访问相册以展示您刚才拍摄的宠物照片";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -308,6 +309,7 @@
 				INFOPLIST_KEY_NSCameraUsageDescription = "我们需要访问相机以控制闪光灯来吸引狗狗注意力";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "我们需要访问麦克风以录制您吸引狗狗的声音";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "我们需要权限将拍摄的狗狗照片保存到您的相册";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "我们需要访问相册以展示您刚才拍摄的宠物照片";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
