@@ -5,11 +5,11 @@ import Combine
 import UIKit
 import Vision
 
-// 1. 定义诱导灯光模式
+// 1. 诱导模式
 enum AttractionMode: Sendable {
-    case day       // 日间吸引：闪烁3下 -> 关闭
-    case night     // 夜间吸引：闪烁3下 -> 保持常亮
-    case constant  // 常亮模式：一直亮着
+    case day       // 日间：闪3下关
+    case night     // 夜间：闪3下开
+    case constant  // 常亮
 }
 
 struct SessionPhoto: Identifiable, Hashable {
@@ -18,7 +18,7 @@ struct SessionPhoto: Identifiable, Hashable {
     let localIdentifier: String
 }
 
-// 狗狗面部数据
+// 面部数据
 struct DogFaceFeatures: Equatable {
     var isDetected: Bool
     var isLookingAtCamera: Bool
@@ -38,16 +38,18 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
     private let sessionQueue = DispatchQueue(label: "com.pawshot.cameraQueue")
     
     // AI 状态
-    var isAIEnabled = false      // AI 模式是否选中
-    var isAIScanning = false     // AI 是否正在运行 (按下快门后)
+    var isAIEnabled = false
+    var isAIScanning = false
     
+    // ⏳ 防抖与冷却
     private var lastCaptureTime = Date.distantPast
     private let cooldownInterval: TimeInterval = 2.0
+    private var stabilityCounter = 0        // 连续合格帧计数器
+    private let stabilityThreshold = 3      // 需要连续 3 帧合格才抓拍
     
-    // 手动诱导闪光计时器
     private var attractionTimer: Timer?
     
-    // iOS 17 动物姿态请求
+    // iOS 17 姿态请求
     private lazy var poseRequest: VNDetectAnimalBodyPoseRequest = {
         let request = VNDetectAnimalBodyPoseRequest { [weak self] request, error in
             self?.handlePoseResults(request, error: error)
@@ -81,7 +83,7 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
     }
     
     func stop() {
-        setTorch(on: false) // 停止时关灯
+        setTorch(on: false)
         sessionQueue.async {
             if self.session.isRunning {
                 self.session.stopRunning()
@@ -90,12 +92,12 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
         }
     }
     
-    // 更新 AI 扫描状态
     func setAIScanning(_ scanning: Bool) {
         sessionQueue.async {
             self.isAIScanning = scanning
+            self.stabilityCounter = 0 // 重置计数器
             if !scanning {
-                self.onFaceFeaturesDetected?(nil) // 停止时清空 HUD
+                self.onFaceFeaturesDetected?(nil)
             }
         }
     }
@@ -135,13 +137,12 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
          }
      }
     
-    // 拍照逻辑：完全静音，不打闪光 (除非常亮模式本身就亮着)
+    // 强制抓拍（无视AI状态，静音）
     func capturePhoto() {
         let settings = AVCapturePhotoSettings()
-        settings.flashMode = .off // 强制关闭闪光
+        settings.flashMode = .off
         settings.maxPhotoDimensions = photoOutput.maxPhotoDimensions
         
-        // 拍照时短暂暂停 AI 更新，防止卡顿
         let wasScanning = isAIScanning
         sessionQueue.async { self.isAIScanning = false }
         
@@ -160,14 +161,12 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
         }
     }
     
-    // ✅ 新增：处理诱导灯光逻辑
     func triggerAttractionLight(mode: AttractionMode) {
         DispatchQueue.main.async { [weak self] in
             self?.runAttractionSequence(mode: mode)
         }
     }
     
-    // ✅ 新增：切换常亮模式
     func setConstantLight(_ on: Bool) {
         sessionQueue.async {
             self.setTorch(on: on, level: 1.0)
@@ -175,31 +174,22 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
     }
     
     private func runAttractionSequence(mode: AttractionMode) {
-        // 如果是常亮模式，手动按钮无效(或者保持常亮)
         if mode == .constant {
             setTorchAsync(on: true)
             return
         }
-        
         var count = 0
         attractionTimer?.invalidate()
-        
-        // 0.1秒间隔，闪烁3次 (开-关-开-关-开-关 = 6次状态变化)
         attractionTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
             guard let self = self else { return }
-            
             let shouldBeOn = (count % 2 == 0)
-            
-            // 6次动作后结束
             if count >= 6 {
                 timer.invalidate()
-                // 结束后状态：日间->关，夜间->开
                 let finalState = (mode == .night)
                 self.setTorchAsync(on: finalState)
             } else {
                 self.setTorchAsync(on: shouldBeOn)
             }
-            
             count += 1
         }
     }
@@ -221,29 +211,24 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
     private func configureSession() {
         session.beginConfiguration()
         session.sessionPreset = .photo
-        
         guard let backCamera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
               let input = try? AVCaptureDeviceInput(device: backCamera) else { return }
-        
         if session.canAddInput(input) {
             session.addInput(input)
             currentInput = input
             updateZoomRangeFromCurrentDevice()
         }
-        
         if session.canAddOutput(photoOutput) {
             session.addOutput(photoOutput)
             if let maxDimension = backCamera.activeFormat.supportedMaxPhotoDimensions.last {
                 photoOutput.maxPhotoDimensions = maxDimension
             }
         }
-        
         if session.canAddOutput(videoOutput) {
             session.addOutput(videoOutput)
             videoOutput.alwaysDiscardsLateVideoFrames = true
             videoOutput.setSampleBufferDelegate(self, queue: sessionQueue)
         }
-        
         session.commitConfiguration()
     }
     
@@ -259,12 +244,10 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
         }
     }
     
-    // MARK: - AI Logic (iOS 17)
+    // MARK: - AI 核心逻辑 (多层过滤)
     
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-        // ✅ 核心修改：只有当 AI 模式选中 且 用户按下了开始(isAIScanning) 才检测
         guard isAIEnabled && isAIScanning else { return }
-        
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         
         var orientation: CGImagePropertyOrientation = .right
@@ -283,6 +266,8 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
     private func handlePoseResults(_ request: VNRequest, error: Error?) {
         guard let results = request.results as? [VNAnimalBodyPoseObservation],
               let observation = results.first else {
+            // 没狗，重置计数器
+            self.stabilityCounter = 0
             self.onFaceFeaturesDetected?(nil)
             return
         }
@@ -290,22 +275,22 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
         do {
             let allPoints = try observation.recognizedPoints(.all)
             
-            guard let leftEye = allPoints[.leftEye], leftEye.confidence > 0.3,
-                  let rightEye = allPoints[.rightEye], rightEye.confidence > 0.3,
-                  let nose = allPoints[.nose], nose.confidence > 0.3 else {
+            // 1. 严格置信度过滤 (提升到 0.6)
+            guard let leftEye = allPoints[.leftEye], leftEye.confidence > 0.6,
+                  let rightEye = allPoints[.rightEye], rightEye.confidence > 0.6,
+                  let nose = allPoints[.nose], nose.confidence > 0.6 else {
+                self.stabilityCounter = 0
                 self.onFaceFeaturesDetected?(nil)
                 return
             }
             
-            let eyesMidX = (leftEye.location.x + rightEye.location.x) / 2.0
-            let eyeDistance = abs(leftEye.location.x - rightEye.location.x)
-            let deviation = abs(nose.location.x - eyesMidX)
+            // 2. 几何校验
+            let geometryPass = isValidFaceGeometry(leftEye: leftEye.location, rightEye: rightEye.location, nose: nose.location)
             
-            let isSymmetrical = deviation < (eyeDistance * 0.25)
-            
+            // 3. 构建 UI 数据
             let features = DogFaceFeatures(
                 isDetected: true,
-                isLookingAtCamera: isSymmetrical,
+                isLookingAtCamera: geometryPass, // 只有几何校验通过才算看镜头
                 leftEye: leftEye.location,
                 rightEye: rightEye.location,
                 nose: nose.location,
@@ -314,19 +299,63 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
             
             self.onFaceFeaturesDetected?(features)
             
-            if isSymmetrical {
+            // 4. 防抖计数器与抓拍
+            if geometryPass {
                 let now = Date()
                 if now.timeIntervalSince(lastCaptureTime) > cooldownInterval {
-                    lastCaptureTime = Date()
-                    DispatchQueue.main.async { [weak self] in
-                        NotificationCenter.default.post(name: NSNotification.Name("TriggerAutoCapture"), object: nil)
+                    // 连续 3 帧合格才拍
+                    stabilityCounter += 1
+                    if stabilityCounter >= stabilityThreshold {
+                        print("🐶 稳定锁定 (连续\(stabilityCounter)帧) -> 抓拍")
+                        stabilityCounter = 0 // 拍完重置
+                        lastCaptureTime = Date()
+                        DispatchQueue.main.async { [weak self] in
+                            NotificationCenter.default.post(name: NSNotification.Name("TriggerAutoCapture"), object: nil)
+                        }
                     }
                 }
+            } else {
+                // 几何校验失败 (比如歪头太厉害，或者鼻子比眼睛高)
+                stabilityCounter = 0
             }
             
         } catch {
-            print("Keypoint extraction error: \(error)")
+            print("Keypoint error: \(error)")
         }
+    }
+    
+    // 📐 核心几何算法：防止拍屁股
+    private func isValidFaceGeometry(leftEye: CGPoint, rightEye: CGPoint, nose: CGPoint) -> Bool {
+        // Vision 坐标系：左下角(0,0)，右上角(1,1)
+        // 正常情况下：眼睛的 Y 值应该 > 鼻子的 Y 值 (眼睛在上方)
+        
+        // Check 1: 垂直位置 (最重要！防止背影误判)
+        let eyesY = (leftEye.y + rightEye.y) / 2.0
+        if nose.y >= eyesY {
+            // 鼻子比眼睛高，绝对是误判 (或者倒立)
+            return false
+        }
+        
+        // Check 2: 对称性 (左右偏转检测)
+        let eyesMidX = (leftEye.x + rightEye.x) / 2.0
+        let eyeDistance = abs(leftEye.x - rightEye.x)
+        let deviation = abs(nose.x - eyesMidX)
+        
+        // 鼻子偏离中心不得超过眼距的 30%
+        if deviation > (eyeDistance * 0.3) {
+            return false
+        }
+        
+        // Check 3: 三角形比例 (上下俯仰检测)
+        // 垂直距离 / 眼距。正常狗脸大概在 0.3 - 1.2 之间
+        let verticalDist = abs(eyesY - nose.y)
+        let ratio = verticalDist / eyeDistance
+        
+        if ratio < 0.2 || ratio > 1.5 {
+            return false
+        }
+        
+        return true
     }
     
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
@@ -341,22 +370,16 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
 class CameraViewModel: ObservableObject {
     
     @Published var isSessionRunning = false
-    @Published var attractionMode: AttractionMode = .day // 默认为日间模式
+    @Published var attractionMode: AttractionMode = .day
     
-    // AI 状态
-    @Published var isAIEnabled: Bool = false { // AI 模式是否被选中
+    @Published var isAIEnabled: Bool = false {
         didSet {
             cameraService.isAIEnabled = isAIEnabled
-            // 切换模式时，重置扫描状态
-            if !isAIEnabled {
-                isAIScanning = false
-            }
+            if !isAIEnabled { isAIScanning = false }
         }
     }
-    @Published var isAIScanning: Bool = false { // AI 是否正在扫描(由快门控制)
-        didSet {
-            cameraService.setAIScanning(isAIScanning)
-        }
+    @Published var isAIScanning: Bool = false {
+        didSet { cameraService.setAIScanning(isAIScanning) }
     }
     
     @Published var detectedFace: DogFaceFeatures?
@@ -376,7 +399,6 @@ class CameraViewModel: ObservableObject {
         cameraService.onSessionRunningChanged = { [weak self] isRunning in
             Task { @MainActor in self?.isSessionRunning = isRunning }
         }
-        
         cameraService.onPhotoCaptured = { [weak self] image in
             let thumb = Self.thumbnail(from: image, maxSize: 120)
             PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
@@ -398,7 +420,6 @@ class CameraViewModel: ObservableObject {
                 }
             }
         }
-        
         cameraService.onZoomRangeChanged = { [weak self] minZoom, maxZoom in
             Task { @MainActor in
                 self?.maxZoomFactor = maxZoom
@@ -406,7 +427,6 @@ class CameraViewModel: ObservableObject {
                 self?.cameraService.setZoomFactor(1.0)
             }
         }
-        
         cameraService.onFaceFeaturesDetected = { [weak self] features in
             Task { @MainActor in
                 self?.detectedFace = features
@@ -424,23 +444,18 @@ class CameraViewModel: ObservableObject {
             .store(in: &cancellables)
     }
     
-    // ✅ 手动诱导：播放声音
     func triggerManualSound() { playAttractionSound() }
     
-    // ✅ 手动诱导：根据左上角的设置触发灯光
     func triggerManualFlash() {
         cameraService.triggerAttractionLight(mode: attractionMode)
     }
     
-    // ✅ 切换左上角的诱导模式
     func cycleAttractionMode() {
         switch attractionMode {
         case .day: attractionMode = .night
         case .night: attractionMode = .constant
         case .constant: attractionMode = .day
         }
-        
-        // 如果切到了常亮，立马开灯；否则关灯等待手动触发
         if attractionMode == .constant {
             cameraService.setConstantLight(true)
         } else {
@@ -448,15 +463,21 @@ class CameraViewModel: ObservableObject {
         }
     }
     
-    // ✅ 核心快门逻辑
+    // 主快门 (AI Start/Stop 或 普通拍照)
     func handleShutterPress() {
         if isAIEnabled {
-            // AI 模式下：快门 = 开始/停止扫描
             isAIScanning.toggle()
         } else {
-            // 普通模式下：快门 = 立即拍照
             cameraService.capturePhoto()
         }
+    }
+    
+    // 强制抓拍 (右侧按钮用)
+    func forceCapture() {
+        // 无论 AI 状态如何，直接抓拍，不影响 AI 扫描状态
+        cameraService.capturePhoto()
+        let generator = UIImpactFeedbackGenerator(style: .heavy)
+        generator.impactOccurred()
     }
     
     func setZoom(_ factor: CGFloat) {
@@ -503,14 +524,9 @@ class CameraViewModel: ObservableObject {
     
     func startSession() { cameraService.start() }
     func stopSession() {
-        // 关闭相册时，如果是常亮模式，回来时可能需要保持；
-        // 但为了简单，暂停session时会自动关灯。
-        // 这里我们只需要确保 session 停止
         cameraService.stop()
-        // 停止扫描
         if isAIScanning { isAIScanning = false }
     }
-    
     func switchCamera() { cameraService.switchCamera() }
     
     private func playAttractionSound() {

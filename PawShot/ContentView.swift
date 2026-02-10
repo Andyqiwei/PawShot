@@ -34,12 +34,10 @@ struct ContentView: View {
                         )
                     
                     // MARK: - AI 实时特征点 HUD
-                    // 仅当 AI 开启 且 正在扫描 时显示
                     if cameraVM.isAIEnabled && cameraVM.isAIScanning {
                         if let face = cameraVM.detectedFace {
                             DogFeaturesHUD(face: face, screenSize: geo.size)
                         } else {
-                            // 扫描中动画
                             VStack {
                                 Spacer()
                                 HStack(spacing: 8) {
@@ -64,7 +62,7 @@ struct ContentView: View {
             VStack {
                 // MARK: - 顶部工具栏
                 HStack(spacing: 15) {
-                    // 左上：诱导模式设置 (Torch Setting)
+                    // 左上：诱导模式设置
                     Button(action: {
                         let generator = UIImpactFeedbackGenerator(style: .light)
                         generator.impactOccurred()
@@ -105,15 +103,13 @@ struct ContentView: View {
                     }
                     
                     Spacer()
-                    
-                    // 右上：已移除声音设置
                 }
                 .padding(.top, 50)
                 .padding(.horizontal)
                 
                 Spacer()
                 
-                // MARK: - 右侧区域 (变焦 + 诱导)
+                // MARK: - 右侧区域 (变焦 + 诱导 + 强制抓拍)
                 HStack(alignment: .bottom) {
                     Spacer()
                     
@@ -140,7 +136,7 @@ struct ContentView: View {
                         }
                         .padding(.bottom, 10)
                         
-                        // 2. 手动闪光 (执行左上角设定的模式)
+                        // 2. 手动闪光
                         Button(action: {
                             let generator = UIImpactFeedbackGenerator(style: .medium)
                             generator.impactOccurred()
@@ -166,6 +162,19 @@ struct ContentView: View {
                                 .padding(14)
                                 .background(Color.blue.opacity(0.7))
                                 .clipShape(Circle())
+                        }
+                        
+                        // 4. 强制抓拍按钮 (New!)
+                        Button(action: {
+                            cameraVM.forceCapture()
+                        }) {
+                            Image(systemName: "camera.circle.fill")
+                                .font(.largeTitle)
+                                .foregroundColor(.white)
+                                .padding(8)
+                                .background(Color.red.opacity(0.8))
+                                .clipShape(Circle())
+                                .shadow(radius: 4)
                         }
                     }
                     .padding(.trailing, 12)
@@ -213,7 +222,7 @@ struct ContentView: View {
                     
                     Spacer()
                     
-                    // 📸 主快门
+                    // 📸 主快门 (AI Start/Stop)
                     Button(action: {
                         let generator = UIImpactFeedbackGenerator(style: .medium)
                         generator.impactOccurred()
@@ -246,7 +255,6 @@ struct ContentView: View {
             }
         }
         .onAppear { cameraVM.startSession() }
-        // 4. 生命周期的改进：打开相册/声音库时停止 Session，回来时启动
         .onChange(of: showSessionGallery) { isOpen in
             if isOpen { cameraVM.stopSession() }
             else { cameraVM.startSession() }
@@ -263,7 +271,6 @@ struct ContentView: View {
         }
     }
     
-    // 辅助计算属性
     var attractionIcon: String {
         switch cameraVM.attractionMode {
         case .day: return "sun.max.fill"
@@ -295,7 +302,7 @@ struct ContentView: View {
     }
 }
 
-// 独立的快门样式组件
+// 快门样式
 struct ShutterButtonView: View {
     let isAIEnabled: Bool
     let isScanning: Bool
@@ -303,45 +310,24 @@ struct ShutterButtonView: View {
     var body: some View {
         ZStack {
             if isAIEnabled {
-                // AI 模式
                 if isScanning {
-                    // 扫描中：红色停止键
-                    Circle()
-                        .fill(Color.red)
-                        .frame(width: 72, height: 72)
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.white)
-                        .frame(width: 24, height: 24)
-                    Circle()
-                        .stroke(Color.red, lineWidth: 4)
-                        .frame(width: 80, height: 80)
+                    Circle().fill(Color.red).frame(width: 72, height: 72)
+                    RoundedRectangle(cornerRadius: 4).fill(Color.white).frame(width: 24, height: 24)
+                    Circle().stroke(Color.red, lineWidth: 4).frame(width: 80, height: 80)
                 } else {
-                    // 待机中：绿色开始键
-                    Circle()
-                        .fill(Color.white)
-                        .frame(width: 72, height: 72)
-                    Text("START")
-                        .font(.caption)
-                        .fontWeight(.black)
-                        .foregroundColor(.black)
-                    Circle()
-                        .stroke(Color.green, lineWidth: 4)
-                        .frame(width: 80, height: 80)
+                    Circle().fill(Color.white).frame(width: 72, height: 72)
+                    Text("START").font(.caption).fontWeight(.black).foregroundColor(.black)
+                    Circle().stroke(Color.green, lineWidth: 4).frame(width: 80, height: 80)
                 }
             } else {
-                // 普通模式：白色拍照键
-                Circle()
-                    .fill(Color.white)
-                    .frame(width: 72, height: 72)
-                Circle()
-                    .stroke(Color.white, lineWidth: 4)
-                    .frame(width: 80, height: 80)
+                Circle().fill(Color.white).frame(width: 72, height: 72)
+                Circle().stroke(Color.white, lineWidth: 4).frame(width: 80, height: 80)
             }
         }
     }
 }
 
-// 保持 HUD 不变
+// HUD 保持不变
 struct DogFeaturesHUD: View {
     let face: DogFaceFeatures
     let screenSize: CGSize
