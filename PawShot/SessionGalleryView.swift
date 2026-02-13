@@ -91,7 +91,6 @@ struct SessionGalleryView: View {
             // 全屏大图浏览 Sheet
             .fullScreenCover(item: Binding<SessionPhoto?>(
                 get: {
-                    // 将 selectedPhotoId 转换为 SessionPhoto 对象以触发 sheet
                     guard let id = selectedPhotoId else { return nil }
                     return cameraVM.sessionPhotos.first(where: { $0.localIdentifier == id })
                 },
@@ -99,14 +98,12 @@ struct SessionGalleryView: View {
                     selectedPhotoId = obj?.localIdentifier
                 }
             )) { (startItem: SessionPhoto) in
-                // 传入初始 ID 和 数据源
                 FullImagePageView(
                     initialId: startItem.localIdentifier,
                     photos: cameraVM.sessionPhotos,
                     onDismiss: { selectedPhotoId = nil },
                     onDelete: { idToDelete in
                         cameraVM.deleteSessionPhoto(localIdentifier: idToDelete)
-                        // 如果删光了，关闭预览
                         if cameraVM.sessionPhotos.isEmpty {
                             selectedPhotoId = nil
                         }
@@ -176,7 +173,7 @@ struct FullImagePageView: View {
                         .tag(photo.localIdentifier)
                 }
             }
-            .tabViewStyle(.page(indexDisplayMode: .never)) // 隐藏自带的点
+            .tabViewStyle(.page(indexDisplayMode: .never))
             
             // 顶部导航栏
             VStack {
@@ -188,7 +185,6 @@ struct FullImagePageView: View {
                             .padding()
                     }
                     Spacer()
-                    // 页码指示
                     if let index = photos.firstIndex(where: { $0.localIdentifier == currentId }) {
                         Text("\(index + 1) / \(photos.count)")
                             .foregroundColor(.white)
@@ -210,7 +206,7 @@ struct FullImagePageView: View {
     }
 }
 
-// MARK: - 支持缩放的单张图片视图
+// MARK: - 支持缩放的单张图片视图 (已修复模糊和手势)
 struct ZoomablePhotoView: View {
     let localIdentifier: String
     @State private var image: UIImage?
@@ -219,121 +215,80 @@ struct ZoomablePhotoView: View {
     @State private var offset: CGSize = .zero
     @State private var lastOffset: CGSize = .zero
     
-    // ✅ 新增状态：控制手势是否包含拖拽
-    // 只有当图片被放大时，我们才允许 DragGesture 存在，否则单指滑动交给 TabView
+    // 控制是否处于放大状态
     @State private var isZoomed = false
     
     var body: some View {
         GeometryReader { proxy in
             ZStack {
+                Color.black.ignoresSafeArea()
+                
                 if let img = image {
-                    // 使用 if-else 根据缩放状态动态切换 View 结构
-                    // 这样可以彻底移除 DragGesture，让 TabView 接收单指滑动
+                    // 1. 基础图片视图配置
+                    // 关键修复：添加 frame 和 contentShape 确保点击黑边也能触发手势
+                    let imageView = Image(uiImage: img)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: proxy.size.width, height: proxy.size.height)
+                        .contentShape(Rectangle()) // ✅ 关键：让整个区域都可交互
+                        .scaleEffect(scale)
+                        .offset(offset)
+                    
+                    // 2. 根据缩放状态动态绑定手势
+                    // 这样设计是为了在未缩放时让出单指滑动的控制权给 TabView
                     if isZoomed {
-                        // 🔍 放大状态：支持 捏合缩放 + 拖拽移动 + 双击复原
-                        Image(uiImage: img)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .scaleEffect(scale)
-                            .offset(offset)
+                        imageView
                             .gesture(
                                 MagnificationGesture()
-                                    .onChanged { value in
-                                        let delta = value / lastScale
-                                        lastScale = value
-                                        let newScale = scale * delta
-                                        scale = min(max(newScale, 1.0), 5.0)
-                                    }
-                                    .onEnded { _ in
-                                        lastScale = 1.0
-                                        withAnimation {
-                                            if scale < 1.0 { scale = 1.0; offset = .zero }
-                                            isZoomed = scale > 1.0
-                                        }
-                                    }
-                                    .simultaneously(with: DragGesture()
-                                        .onChanged { value in
-                                            // 只有放大时才允许改变位置
-                                            if scale > 1.0 {
-                                                var newOffset = lastOffset
-                                                newOffset.width += value.translation.width
-                                                newOffset.height += value.translation.height
-                                                offset = newOffset
-                                            }
-                                        }
-                                        .onEnded { _ in
-                                            lastOffset = offset
-                                        }
+                                    .onChanged(onPinchChanged)
+                                    .onEnded(onPinchEnded)
+                                    .simultaneously(with:
+                                        DragGesture()
+                                            .onChanged(onDragChanged)
+                                            .onEnded(onDragEnded)
                                     )
                             )
-                            .onTapGesture(count: 2) {
-                                // 双击缩小
-                                withAnimation {
-                                    scale = 1.0
-                                    offset = .zero
-                                    isZoomed = false
-                                }
-                            }
+                            .onTapGesture(count: 2, perform: onDoubleTap)
                     } else {
-                        // 📱 普通状态：仅支持 捏合缩放 + 双击放大
-                        // 没有 DragGesture，所以单指滑动会穿透给外层的 TabView (实现左右翻页)
-                        Image(uiImage: img)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .scaleEffect(scale)
-                            .offset(offset)
+                        imageView
                             .gesture(
                                 MagnificationGesture()
-                                    .onChanged { value in
-                                        let delta = value / lastScale
-                                        lastScale = value
-                                        let newScale = scale * delta
-                                        scale = min(max(newScale, 1.0), 5.0)
-                                    }
-                                    .onEnded { _ in
-                                        lastScale = 1.0
-                                        withAnimation {
-                                            if scale < 1.0 { scale = 1.0; offset = .zero }
-                                            // 如果放大了，切换状态以启用拖拽
-                                            isZoomed = scale > 1.0
-                                        }
-                                    }
+                                    .onChanged(onPinchChanged)
+                                    .onEnded(onPinchEnded)
                             )
-                            .onTapGesture(count: 2) {
-                                // 双击放大
-                                withAnimation {
-                                    scale = 2.0
-                                    isZoomed = true
-                                }
-                            }
+                            .onTapGesture(count: 2, perform: onDoubleTap)
                     }
                 } else {
                     ProgressView()
                         .tint(.white)
                 }
             }
-            .frame(width: proxy.size.width, height: proxy.size.height)
-            .clipped()
         }
         .onAppear(perform: loadFullImage)
-        // 每次切换图片时重置状态
-        .onChange(of: localIdentifier) { _ in
-            scale = 1.0
-            offset = .zero
-            lastOffset = .zero
-            isZoomed = false
-        }
+        .onChange(of: localIdentifier) { _ in resetState() }
     }
     
+    // MARK: - 高清加载逻辑
     private func loadFullImage() {
         let assets = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil)
         guard let asset = assets.firstObject else { return }
+        
         let options = PHImageRequestOptions()
-        options.deliveryMode = .highQualityFormat
+        options.deliveryMode = .highQualityFormat // 确保请求高质量
         options.isNetworkAccessAllowed = true
+        options.resizeMode = .exact
+        
+        // ✅ 关键修复：乘以屏幕缩放比例 (scale)，获取物理像素尺寸
+        // 比如 iPhone 14 Pro 的 scale 是 3.0，这样才能拿到 3 倍高清图
+        let screenScale = UIScreen.main.scale
+        let targetSize = CGSize(
+            width: UIScreen.main.bounds.width * screenScale,
+            height: UIScreen.main.bounds.height * screenScale
+        )
+        
         PHImageManager.default().requestImage(
             for: asset,
-            targetSize: UIScreen.main.bounds.size,
+            targetSize: targetSize,
             contentMode: .aspectFit,
             options: options
         ) { img, _ in
@@ -341,6 +296,66 @@ struct ZoomablePhotoView: View {
                 self.image = img
             }
         }
+    }
+    
+    // MARK: - 手势处理
+    
+    private func onPinchChanged(value: CGFloat) {
+        let delta = value / lastScale
+        lastScale = value
+        let newScale = scale * delta
+        scale = min(max(newScale, 1.0), 5.0) // 限制最大 5 倍
+    }
+    
+    private func onPinchEnded(value: CGFloat) {
+        lastScale = 1.0
+        withAnimation {
+            if scale < 1.0 {
+                scale = 1.0
+                offset = .zero
+            }
+            isZoomed = scale > 1.0
+        }
+    }
+    
+    private func onDragChanged(value: DragGesture.Value) {
+        // 只有在放大状态下才允许拖拽
+        guard isZoomed else { return }
+        let newOffset = CGSize(
+            width: lastOffset.width + value.translation.width,
+            height: lastOffset.height + value.translation.height
+        )
+        offset = newOffset
+    }
+    
+    private func onDragEnded(value: DragGesture.Value) {
+        if isZoomed {
+            lastOffset = offset
+        }
+    }
+    
+    private func onDoubleTap() {
+        withAnimation {
+            if scale > 1.0 {
+                // 缩小复原
+                scale = 1.0
+                offset = .zero
+                lastOffset = .zero
+                isZoomed = false
+            } else {
+                // 放大
+                scale = 2.0
+                isZoomed = true
+            }
+        }
+    }
+    
+    private func resetState() {
+        scale = 1.0
+        offset = .zero
+        lastOffset = .zero
+        isZoomed = false
+        lastScale = 1.0
     }
 }
 

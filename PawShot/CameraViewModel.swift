@@ -41,12 +41,20 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
     var isAIEnabled = false
     var isAIScanning = false
     
-    // ⏳ 防抖与冷却
-    private var lastCaptureTime = Date.distantPast
-    private let cooldownInterval: TimeInterval = 2.0
-    private var stabilityCounter = 0        // 连续合格帧计数器
-    private let stabilityThreshold = 3      // 需要连续 3 帧合格才抓拍
+    // 🔒 连拍锁
+    private var isCapturingBurst = false
+    private var burstBuffer: [UIImage] = []
+    private var expectedBurstCount = 0
+    private let burstTotalCount = 4
     
+    // ⏳ 算法状态
+    private var lastCaptureTime = Date.distantPast
+    private let cooldownInterval: TimeInterval = 1.5
+    private var stabilityCounter = 0
+    private let stabilityThreshold = 2
+    
+    // 速度检测
+    private var previousNosePoint: CGPoint?
     private var attractionTimer: Timer?
     
     // iOS 17 姿态请求
@@ -95,7 +103,11 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
     func setAIScanning(_ scanning: Bool) {
         sessionQueue.async {
             self.isAIScanning = scanning
-            self.stabilityCounter = 0 // 重置计数器
+            self.stabilityCounter = 0
+            self.previousNosePoint = nil
+            self.isCapturingBurst = false
+            self.burstBuffer.removeAll()
+            
             if !scanning {
                 self.onFaceFeaturesDetected?(nil)
             }
@@ -137,29 +149,139 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
          }
      }
     
-    // 强制抓拍（无视AI状态，静音）
-    func capturePhoto() {
+    // MARK: - 📸 智能拍摄路由
+    
+    // 供外部手动调用 (强制单张)
+    func forceCapture() {
+        sessionQueue.async {
+            self.captureSinglePhoto(isBurst: false)
+        }
+    }
+    
+    // 供 Notification 调用 (智能判断连拍还是单张)
+    func smartCapture(preferBurst: Bool) {
+        sessionQueue.async {
+            if preferBurst {
+                self.performBurstCapture()
+            } else {
+                print("📸 狗狗很稳，单张抓拍")
+                self.captureSinglePhoto(isBurst: false)
+            }
+        }
+    }
+    
+    private func performBurstCapture() {
+        if self.isCapturingBurst { return }
+        self.isCapturingBurst = true
+        self.burstBuffer.removeAll()
+        self.expectedBurstCount = self.burstTotalCount
+        
+        print("🚀 狗狗在动，启动连拍优选: 目标 \(self.burstTotalCount) 张")
+        
+        // 极速连发
+        for _ in 0..<self.burstTotalCount {
+            self.captureSinglePhoto(isBurst: true)
+        }
+    }
+    
+    private func captureSinglePhoto(isBurst: Bool) {
         let settings = AVCapturePhotoSettings()
         settings.flashMode = .off
         settings.maxPhotoDimensions = photoOutput.maxPhotoDimensions
         
-        let wasScanning = isAIScanning
-        sessionQueue.async { self.isAIScanning = false }
+        // ✅ 修复报错：直接设置优先级
+        // 如果是连拍，用 .speed 追求极致速度
+        // 如果是单张，用 .balanced 追求 ZSL (零快门延迟) 与画质的平衡
+        if isBurst {
+            settings.photoQualityPrioritization = .speed
+        } else {
+            settings.photoQualityPrioritization = .balanced
+        }
         
         if photoOutput.availablePhotoCodecTypes.contains(.hevc) {
             let format = [AVVideoCodecKey: AVVideoCodecType.hevc]
             let newSettings = AVCapturePhotoSettings(format: format)
             newSettings.flashMode = .off
             newSettings.maxPhotoDimensions = photoOutput.maxPhotoDimensions
+            newSettings.photoQualityPrioritization = settings.photoQualityPrioritization // 同步优先级设置
             photoOutput.capturePhoto(with: newSettings, delegate: self)
         } else {
             photoOutput.capturePhoto(with: settings, delegate: self)
         }
+    }
+    
+    // MARK: - 图片处理 (Delegate)
+    
+    func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
+        if let error = error { print("Error: \(error)"); return }
+        guard let data = photo.fileDataRepresentation(), let image = UIImage(data: data) else { return }
         
-        sessionQueue.asyncAfter(deadline: .now() + 0.5) {
-            if wasScanning { self.isAIScanning = true }
+        sessionQueue.async { [weak self] in
+            guard let self = self else { return }
+            
+            if self.isCapturingBurst {
+                // --- 连拍处理 ---
+                self.burstBuffer.append(image)
+                self.expectedBurstCount -= 1
+                
+                if self.expectedBurstCount <= 0 {
+                    print("🔍 AI 优选最佳照片...")
+                    if let bestImage = self.selectBestImage(from: self.burstBuffer) {
+                        self.onPhotoCaptured?(bestImage)
+                    } else {
+                        self.onPhotoCaptured?(image)
+                    }
+                    
+                    self.burstBuffer.removeAll()
+                    
+                    // 冷却解锁
+                    self.sessionQueue.asyncAfter(deadline: .now() + 1.0) {
+                        self.isCapturingBurst = false
+                        self.stabilityCounter = 0
+                        self.previousNosePoint = nil
+                        print("🔓 AI 解锁")
+                    }
+                }
+            } else {
+                // --- 单张处理 ---
+                self.onPhotoCaptured?(image)
+                // 单张拍完也稍微重置下状态，防止连续触发
+                self.stabilityCounter = 0
+            }
         }
     }
+    
+    private func selectBestImage(from images: [UIImage]) -> UIImage? {
+        guard !images.isEmpty else { return nil }
+        if images.count == 1 { return images.first }
+        
+        var bestImage: UIImage? = images.last
+        var maxScore: Float = -1.0
+        
+        for image in images {
+            let score = calculateImageScore(image)
+            if score > maxScore {
+                maxScore = score
+                bestImage = image
+            }
+        }
+        return bestImage
+    }
+    
+    private func calculateImageScore(_ image: UIImage) -> Float {
+        guard let cgImage = image.cgImage else { return 0 }
+        let handler = VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:])
+        let request = VNDetectAnimalBodyPoseRequest()
+        do {
+            try handler.perform([request])
+            guard let observation = request.results?.first else { return 0 }
+            let points = try observation.recognizedPoints(.all)
+            guard let leftEye = points[.leftEye], let nose = points[.nose] else { return 0.1 }
+            return leftEye.confidence + nose.confidence
+        } catch { return 0 }
+    }
+    
+    // MARK: - 诱导与配置
     
     func triggerAttractionLight(mode: AttractionMode) {
         DispatchQueue.main.async { [weak self] in
@@ -213,17 +335,36 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
         session.sessionPreset = .photo
         guard let backCamera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
               let input = try? AVCaptureDeviceInput(device: backCamera) else { return }
+        
         if session.canAddInput(input) {
             session.addInput(input)
             currentInput = input
+            
+            do {
+                try input.device.lockForConfiguration()
+                if input.device.isFocusModeSupported(.continuousAutoFocus) {
+                    input.device.focusMode = .continuousAutoFocus
+                }
+                if input.device.isSmoothAutoFocusSupported {
+                    input.device.isSmoothAutoFocusEnabled = true
+                }
+                input.device.unlockForConfiguration()
+            } catch { print("Focus Error: \(error)") }
+            
             updateZoomRangeFromCurrentDevice()
         }
+        
         if session.canAddOutput(photoOutput) {
             session.addOutput(photoOutput)
+            photoOutput.isHighResolutionCaptureEnabled = true
+            // 设置最大支持质量为 Balanced，这样我们可以在设置里选 Speed 或 Balanced
+            photoOutput.maxPhotoQualityPrioritization = .balanced
+            
             if let maxDimension = backCamera.activeFormat.supportedMaxPhotoDimensions.last {
                 photoOutput.maxPhotoDimensions = maxDimension
             }
         }
+        
         if session.canAddOutput(videoOutput) {
             session.addOutput(videoOutput)
             videoOutput.alwaysDiscardsLateVideoFrames = true
@@ -244,10 +385,10 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
         }
     }
     
-    // MARK: - AI 核心逻辑 (多层过滤)
+    // MARK: - AI 核心逻辑 (智能判断是否连拍)
     
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-        guard isAIEnabled && isAIScanning else { return }
+        guard isAIEnabled && isAIScanning && !isCapturingBurst else { return }
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         
         var orientation: CGImagePropertyOrientation = .right
@@ -264,10 +405,11 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
     }
     
     private func handlePoseResults(_ request: VNRequest, error: Error?) {
+        if isCapturingBurst { return }
+        
         guard let results = request.results as? [VNAnimalBodyPoseObservation],
               let observation = results.first else {
-            // 没狗，重置计数器
-            self.stabilityCounter = 0
+            resetStability()
             self.onFaceFeaturesDetected?(nil)
             return
         }
@@ -275,48 +417,57 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
         do {
             let allPoints = try observation.recognizedPoints(.all)
             
-            // 1. 严格置信度过滤 (提升到 0.6)
+            // 1. 置信度
             guard let leftEye = allPoints[.leftEye], leftEye.confidence > 0.6,
                   let rightEye = allPoints[.rightEye], rightEye.confidence > 0.6,
                   let nose = allPoints[.nose], nose.confidence > 0.6 else {
-                self.stabilityCounter = 0
+                resetStability()
                 self.onFaceFeaturesDetected?(nil)
                 return
             }
             
-            // 2. 几何校验
+            // 2. 几何
             let geometryPass = isValidFaceGeometry(leftEye: leftEye.location, rightEye: rightEye.location, nose: nose.location)
             
-            // 3. 构建 UI 数据
+            // 3. 动态分析运动状态
+            // 返回: (是否允许拍摄, 是否需要连拍)
+            let motionAnalysis = analyzeMotionAndLight(currentNose: nose.location)
+            self.previousNosePoint = nose.location
+            
+            // UI Update
             let features = DogFaceFeatures(
                 isDetected: true,
-                isLookingAtCamera: geometryPass, // 只有几何校验通过才算看镜头
+                isLookingAtCamera: geometryPass,
                 leftEye: leftEye.location,
                 rightEye: rightEye.location,
                 nose: nose.location,
                 boundingBox: CGRect.zero
             )
-            
             self.onFaceFeaturesDetected?(features)
             
-            // 4. 防抖计数器与抓拍
-            if geometryPass {
+            if geometryPass && motionAnalysis.passed {
                 let now = Date()
                 if now.timeIntervalSince(lastCaptureTime) > cooldownInterval {
-                    // 连续 3 帧合格才拍
                     stabilityCounter += 1
                     if stabilityCounter >= stabilityThreshold {
-                        print("🐶 稳定锁定 (连续\(stabilityCounter)帧) -> 抓拍")
-                        stabilityCounter = 0 // 拍完重置
+                        // 锁定成功，决定拍摄模式
+                        let preferBurst = motionAnalysis.needsBurst
+                        
+                        stabilityCounter = 0
                         lastCaptureTime = Date()
+                        
                         DispatchQueue.main.async { [weak self] in
-                            NotificationCenter.default.post(name: NSNotification.Name("TriggerAutoCapture"), object: nil)
+                            // 通过 userInfo 传递是否需要连拍
+                            NotificationCenter.default.post(
+                                name: NSNotification.Name("TriggerAutoCapture"),
+                                object: nil,
+                                userInfo: ["preferBurst": preferBurst]
+                            )
                         }
                     }
                 }
             } else {
-                // 几何校验失败 (比如歪头太厉害，或者鼻子比眼睛高)
-                stabilityCounter = 0
+                stabilityCounter = max(0, stabilityCounter - 1)
             }
             
         } catch {
@@ -324,44 +475,59 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
         }
     }
     
-    // 📐 核心几何算法：防止拍屁股
-    private func isValidFaceGeometry(leftEye: CGPoint, rightEye: CGPoint, nose: CGPoint) -> Bool {
-        // Vision 坐标系：左下角(0,0)，右上角(1,1)
-        // 正常情况下：眼睛的 Y 值应该 > 鼻子的 Y 值 (眼睛在上方)
+    private func resetStability() {
+        self.stabilityCounter = 0
+        self.previousNosePoint = nil
+    }
+    
+    // 💡 智能运动分析
+    // 返回 (passed: 是否在允许范围内, needsBurst: 是否推荐连拍)
+    private func analyzeMotionAndLight(currentNose: CGPoint) -> (passed: Bool, needsBurst: Bool) {
+        guard let prev = previousNosePoint else { return (false, false) }
         
-        // Check 1: 垂直位置 (最重要！防止背影误判)
-        let eyesY = (leftEye.y + rightEye.y) / 2.0
-        if nose.y >= eyesY {
-            // 鼻子比眼睛高，绝对是误判 (或者倒立)
-            return false
+        let dx = currentNose.x - prev.x
+        let dy = currentNose.y - prev.y
+        let distance = sqrt(dx*dx + dy*dy)
+        let currentISO = currentInput?.device.iso ?? 100
+        
+        // 阈值定义 (Vision 0-1 坐标系)
+        // 0.002: 非常稳 (千分之二屏幕移动)
+        // 0.015: 正常移动
+        // 0.035: 快速移动
+        
+        // 1. 计算允许的最大速度 (Max Threshold) - 超过这个完全不拍，必定糊
+        let maxVelocityThreshold: CGFloat
+        if currentISO < 200 { maxVelocityThreshold = 0.04 }      // 光线好，容忍度高
+        else if currentISO < 800 { maxVelocityThreshold = 0.02 } // 正常
+        else { maxVelocityThreshold = 0.005 }                    // 暗光，必须超稳
+        
+        if distance > maxVelocityThreshold {
+            return (false, false) // 动太快了，不拍
         }
         
-        // Check 2: 对称性 (左右偏转检测)
+        // 2. 计算是否需要连拍 (Burst Threshold)
+        // 如果移动量非常小 (比如 < 0.003)，说明狗狗在发呆，单张即可
+        // 如果移动量稍大 (0.003 ~ max)，说明在动，建议连拍抓瞬间
+        let stableThreshold: CGFloat = 0.003
+        let needsBurst = distance > stableThreshold
+        
+        return (true, needsBurst)
+    }
+    
+    private func isValidFaceGeometry(leftEye: CGPoint, rightEye: CGPoint, nose: CGPoint) -> Bool {
+        let eyesY = (leftEye.y + rightEye.y) / 2.0
+        if nose.y >= eyesY { return false }
+        
         let eyesMidX = (leftEye.x + rightEye.x) / 2.0
         let eyeDistance = abs(leftEye.x - rightEye.x)
         let deviation = abs(nose.x - eyesMidX)
+        if deviation > (eyeDistance * 0.35) { return false }
         
-        // 鼻子偏离中心不得超过眼距的 30%
-        if deviation > (eyeDistance * 0.3) {
-            return false
-        }
-        
-        // Check 3: 三角形比例 (上下俯仰检测)
-        // 垂直距离 / 眼距。正常狗脸大概在 0.3 - 1.2 之间
         let verticalDist = abs(eyesY - nose.y)
         let ratio = verticalDist / eyeDistance
-        
-        if ratio < 0.2 || ratio > 1.5 {
-            return false
-        }
+        if ratio < 0.2 || ratio > 1.6 { return false }
         
         return true
-    }
-    
-    func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
-        if let error = error { print("Error: \(error)"); return }
-        guard let data = photo.fileDataRepresentation(), let image = UIImage(data: data) else { return }
-        onPhotoCaptured?(image)
     }
 }
 
@@ -433,10 +599,14 @@ class CameraViewModel: ObservableObject {
             }
         }
         
+        // 接收 AI 抓拍通知 (包含连拍建议)
         NotificationCenter.default.publisher(for: NSNotification.Name("TriggerAutoCapture"))
-            .sink { [weak self] _ in
+            .sink { [weak self] notification in
                 Task { @MainActor in
-                    self?.cameraService.capturePhoto()
+                    // 从 userInfo 获取连拍建议
+                    let preferBurst = notification.userInfo?["preferBurst"] as? Bool ?? false
+                    self?.cameraService.smartCapture(preferBurst: preferBurst)
+                    
                     let generator = UINotificationFeedbackGenerator()
                     generator.notificationOccurred(.success)
                 }
@@ -463,19 +633,16 @@ class CameraViewModel: ObservableObject {
         }
     }
     
-    // 主快门 (AI Start/Stop 或 普通拍照)
     func handleShutterPress() {
         if isAIEnabled {
             isAIScanning.toggle()
         } else {
-            cameraService.capturePhoto()
+            cameraService.forceCapture()
         }
     }
     
-    // 强制抓拍 (右侧按钮用)
     func forceCapture() {
-        // 无论 AI 状态如何，直接抓拍，不影响 AI 扫描状态
-        cameraService.capturePhoto()
+        cameraService.forceCapture()
         let generator = UIImpactFeedbackGenerator(style: .heavy)
         generator.impactOccurred()
     }
