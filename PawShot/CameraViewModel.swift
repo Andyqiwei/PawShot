@@ -41,7 +41,7 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
     var isAIEnabled = false
     var isAIScanning = false
     
-    // 🔒 连拍锁
+    // 🔒 连拍锁与缓存
     private var isCapturingBurst = false
     private var burstBuffer: [UIImage] = []
     private var expectedBurstCount = 0
@@ -53,7 +53,6 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
     private var stabilityCounter = 0
     private let stabilityThreshold = 2
     
-    // 速度检测
     private var previousNosePoint: CGPoint?
     private var attractionTimer: Timer?
     
@@ -76,8 +75,31 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
     
     override init() {
         super.init()
+        
+        // 🚀 核心加速：后台静默预热 AI 模型
+        prewarmVisionModel()
+        
         sessionQueue.async { [weak self] in
             self?.configureSession()
+        }
+    }
+    
+    // 喂一张空图片，强制 Vision 提前载入神经网络模型
+    private func prewarmVisionModel() {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let colorSpace = CGColorSpaceCreateDeviceRGB()
+            let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
+            guard let context = CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4, space: colorSpace, bitmapInfo: bitmapInfo),
+                  let cgImage = context.makeImage() else { return }
+            
+            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+            let request = VNDetectAnimalBodyPoseRequest()
+            do {
+                try handler.perform([request])
+                print("🚀 [Pre-warm] AI 神经网络模型预热完成！")
+            } catch {
+                print("AI Pre-warm failed: \(error)")
+            }
         }
     }
     
@@ -151,20 +173,18 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
     
     // MARK: - 📸 智能拍摄路由
     
-    // 供外部手动调用 (强制单张)
     func forceCapture() {
         sessionQueue.async {
             self.captureSinglePhoto(isBurst: false)
         }
     }
     
-    // 供 Notification 调用 (智能判断连拍还是单张)
     func smartCapture(preferBurst: Bool) {
         sessionQueue.async {
             if preferBurst {
                 self.performBurstCapture()
             } else {
-                print("📸 狗狗很稳，单张抓拍")
+                print("📸 狗狗稳定，单张极速抓拍")
                 self.captureSinglePhoto(isBurst: false)
             }
         }
@@ -176,9 +196,7 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
         self.burstBuffer.removeAll()
         self.expectedBurstCount = self.burstTotalCount
         
-        print("🚀 狗狗在动，启动连拍优选: 目标 \(self.burstTotalCount) 张")
-        
-        // 极速连发
+        print("🚀 狗狗微动，启动极速连拍优选: 目标 \(self.burstTotalCount) 张")
         for _ in 0..<self.burstTotalCount {
             self.captureSinglePhoto(isBurst: true)
         }
@@ -189,9 +207,7 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
         settings.flashMode = .off
         settings.maxPhotoDimensions = photoOutput.maxPhotoDimensions
         
-        // ✅ 修复报错：直接设置优先级
-        // 如果是连拍，用 .speed 追求极致速度
-        // 如果是单张，用 .balanced 追求 ZSL (零快门延迟) 与画质的平衡
+        // 连拍用 .speed，单张用 .balanced (ZSL)
         if isBurst {
             settings.photoQualityPrioritization = .speed
         } else {
@@ -203,7 +219,7 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
             let newSettings = AVCapturePhotoSettings(format: format)
             newSettings.flashMode = .off
             newSettings.maxPhotoDimensions = photoOutput.maxPhotoDimensions
-            newSettings.photoQualityPrioritization = settings.photoQualityPrioritization // 同步优先级设置
+            newSettings.photoQualityPrioritization = settings.photoQualityPrioritization
             photoOutput.capturePhoto(with: newSettings, delegate: self)
         } else {
             photoOutput.capturePhoto(with: settings, delegate: self)
@@ -220,7 +236,6 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
             guard let self = self else { return }
             
             if self.isCapturingBurst {
-                // --- 连拍处理 ---
                 self.burstBuffer.append(image)
                 self.expectedBurstCount -= 1
                 
@@ -233,19 +248,15 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
                     }
                     
                     self.burstBuffer.removeAll()
-                    
-                    // 冷却解锁
                     self.sessionQueue.asyncAfter(deadline: .now() + 1.0) {
                         self.isCapturingBurst = false
                         self.stabilityCounter = 0
                         self.previousNosePoint = nil
-                        print("🔓 AI 解锁")
+                        print("🔓 连拍完成，AI 解锁")
                     }
                 }
             } else {
-                // --- 单张处理 ---
                 self.onPhotoCaptured?(image)
-                // 单张拍完也稍微重置下状态，防止连续触发
                 self.stabilityCounter = 0
             }
         }
@@ -357,7 +368,6 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
         if session.canAddOutput(photoOutput) {
             session.addOutput(photoOutput)
             photoOutput.isHighResolutionCaptureEnabled = true
-            // 设置最大支持质量为 Balanced，这样我们可以在设置里选 Speed 或 Balanced
             photoOutput.maxPhotoQualityPrioritization = .balanced
             
             if let maxDimension = backCamera.activeFormat.supportedMaxPhotoDimensions.last {
@@ -385,7 +395,7 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
         }
     }
     
-    // MARK: - AI 核心逻辑 (智能判断是否连拍)
+    // MARK: - AI 核心逻辑
     
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         guard isAIEnabled && isAIScanning && !isCapturingBurst else { return }
@@ -417,7 +427,6 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
         do {
             let allPoints = try observation.recognizedPoints(.all)
             
-            // 1. 置信度
             guard let leftEye = allPoints[.leftEye], leftEye.confidence > 0.6,
                   let rightEye = allPoints[.rightEye], rightEye.confidence > 0.6,
                   let nose = allPoints[.nose], nose.confidence > 0.6 else {
@@ -426,15 +435,10 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
                 return
             }
             
-            // 2. 几何
             let geometryPass = isValidFaceGeometry(leftEye: leftEye.location, rightEye: rightEye.location, nose: nose.location)
-            
-            // 3. 动态分析运动状态
-            // 返回: (是否允许拍摄, 是否需要连拍)
             let motionAnalysis = analyzeMotionAndLight(currentNose: nose.location)
             self.previousNosePoint = nose.location
             
-            // UI Update
             let features = DogFaceFeatures(
                 isDetected: true,
                 isLookingAtCamera: geometryPass,
@@ -450,14 +454,11 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
                 if now.timeIntervalSince(lastCaptureTime) > cooldownInterval {
                     stabilityCounter += 1
                     if stabilityCounter >= stabilityThreshold {
-                        // 锁定成功，决定拍摄模式
                         let preferBurst = motionAnalysis.needsBurst
-                        
                         stabilityCounter = 0
                         lastCaptureTime = Date()
                         
                         DispatchQueue.main.async { [weak self] in
-                            // 通过 userInfo 传递是否需要连拍
                             NotificationCenter.default.post(
                                 name: NSNotification.Name("TriggerAutoCapture"),
                                 object: nil,
@@ -480,8 +481,6 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
         self.previousNosePoint = nil
     }
     
-    // 💡 智能运动分析
-    // 返回 (passed: 是否在允许范围内, needsBurst: 是否推荐连拍)
     private func analyzeMotionAndLight(currentNose: CGPoint) -> (passed: Bool, needsBurst: Bool) {
         guard let prev = previousNosePoint else { return (false, false) }
         
@@ -490,24 +489,15 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
         let distance = sqrt(dx*dx + dy*dy)
         let currentISO = currentInput?.device.iso ?? 100
         
-        // 阈值定义 (Vision 0-1 坐标系)
-        // 0.002: 非常稳 (千分之二屏幕移动)
-        // 0.015: 正常移动
-        // 0.035: 快速移动
-        
-        // 1. 计算允许的最大速度 (Max Threshold) - 超过这个完全不拍，必定糊
         let maxVelocityThreshold: CGFloat
-        if currentISO < 200 { maxVelocityThreshold = 0.04 }      // 光线好，容忍度高
-        else if currentISO < 800 { maxVelocityThreshold = 0.02 } // 正常
-        else { maxVelocityThreshold = 0.005 }                    // 暗光，必须超稳
+        if currentISO < 200 { maxVelocityThreshold = 0.04 }
+        else if currentISO < 800 { maxVelocityThreshold = 0.02 }
+        else { maxVelocityThreshold = 0.005 }
         
         if distance > maxVelocityThreshold {
-            return (false, false) // 动太快了，不拍
+            return (false, false)
         }
         
-        // 2. 计算是否需要连拍 (Burst Threshold)
-        // 如果移动量非常小 (比如 < 0.003)，说明狗狗在发呆，单张即可
-        // 如果移动量稍大 (0.003 ~ max)，说明在动，建议连拍抓瞬间
         let stableThreshold: CGFloat = 0.003
         let needsBurst = distance > stableThreshold
         
@@ -599,14 +589,11 @@ class CameraViewModel: ObservableObject {
             }
         }
         
-        // 接收 AI 抓拍通知 (包含连拍建议)
         NotificationCenter.default.publisher(for: NSNotification.Name("TriggerAutoCapture"))
             .sink { [weak self] notification in
                 Task { @MainActor in
-                    // 从 userInfo 获取连拍建议
                     let preferBurst = notification.userInfo?["preferBurst"] as? Bool ?? false
                     self?.cameraService.smartCapture(preferBurst: preferBurst)
-                    
                     let generator = UINotificationFeedbackGenerator()
                     generator.notificationOccurred(.success)
                 }
