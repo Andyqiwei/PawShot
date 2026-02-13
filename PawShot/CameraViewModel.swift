@@ -384,16 +384,17 @@ private class CameraService: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureV
     }
     
     private func updateZoomRangeFromCurrentDevice() {
-        guard let device = currentInput?.device else { return }
-        minZoomFactor = 1.0
-        let deviceMax = CGFloat(device.activeFormat.videoMaxZoomFactor)
-        maxZoomFactor = min(deviceMax, 50)
-        if maxZoomFactor < 1.0 { maxZoomFactor = 1.0 }
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.onZoomRangeChanged?(self.minZoomFactor, self.maxZoomFactor)
+            guard let device = currentInput?.device else { return }
+            minZoomFactor = 1.0
+            let deviceMax = CGFloat(device.activeFormat.videoMaxZoomFactor)
+            // ✅ 将最大变焦限制从 50 修改为 20
+            maxZoomFactor = min(deviceMax, 20)
+            if maxZoomFactor < 1.0 { maxZoomFactor = 1.0 }
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.onZoomRangeChanged?(self.minZoomFactor, self.maxZoomFactor)
+            }
         }
-    }
     
     // MARK: - AI 核心逻辑
     

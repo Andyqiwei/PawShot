@@ -12,51 +12,76 @@ struct ContentView: View {
         ZStack {
             Color.black.edgesIgnoringSafeArea(.all)
             
-            // 1. 相机预览层
+            // 1. 相机预览层与加载状态
             GeometryReader { geo in
                 ZStack {
-                    CameraPreviewView(session: cameraVM.session)
-                        .edgesIgnoringSafeArea(.all)
-                        .gesture(
-                            MagnificationGesture()
-                                .onChanged { scale in
-                                    if !isPinching {
-                                        isPinching = true
+                    if cameraVM.isSessionRunning {
+                        // 📷 相机画面
+                        CameraPreviewView(session: cameraVM.session)
+                            .edgesIgnoringSafeArea(.all)
+                            .transition(.opacity) // 平滑渐显
+                            .gesture(
+                                MagnificationGesture()
+                                    .onChanged { scale in
+                                        if !isPinching {
+                                            isPinching = true
+                                            pinchStartZoom = cameraVM.zoomFactor
+                                        }
+                                        let newZoom = pinchStartZoom * scale
+                                        cameraVM.setZoom(newZoom)
+                                    }
+                                    .onEnded { _ in
+                                        isPinching = false
                                         pinchStartZoom = cameraVM.zoomFactor
                                     }
-                                    let newZoom = pinchStartZoom * scale
-                                    cameraVM.setZoom(newZoom)
+                            )
+                        
+                        // MARK: - AI 实时特征点 HUD
+                        if cameraVM.isAIEnabled && cameraVM.isAIScanning {
+                            if let face = cameraVM.detectedFace {
+                                DogFeaturesHUD(face: face, screenSize: geo.size)
+                            } else {
+                                VStack {
+                                    Spacer()
+                                    HStack(spacing: 8) {
+                                        ProgressView()
+                                            .tint(.white)
+                                        Text("寻找狗狗正脸...")
+                                            .font(.subheadline)
+                                            .fontWeight(.medium)
+                                            .foregroundColor(.white)
+                                    }
+                                    .padding(12)
+                                    .background(.ultraThinMaterial)
+                                    .clipShape(Capsule())
+                                    .padding(.bottom, 100)
                                 }
-                                .onEnded { _ in
-                                    isPinching = false
-                                    pinchStartZoom = cameraVM.zoomFactor
-                                }
-                        )
-                    
-                    // MARK: - AI 实时特征点 HUD
-                    if cameraVM.isAIEnabled && cameraVM.isAIScanning {
-                        if let face = cameraVM.detectedFace {
-                            DogFeaturesHUD(face: face, screenSize: geo.size)
-                        } else {
-                            VStack {
-                                Spacer()
-                                HStack(spacing: 8) {
-                                    ProgressView()
-                                        .tint(.white)
-                                    Text("寻找狗狗正脸...")
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                        .foregroundColor(.white)
-                                }
-                                .padding(12)
-                                .background(.ultraThinMaterial)
-                                .clipShape(Capsule())
-                                .padding(.bottom, 100)
+                                .transition(.opacity)
                             }
-                            .transition(.opacity)
                         }
+                    } else {
+                        // ⏳ 加载占位界面 (告别黑屏)
+                        VStack(spacing: 20) {
+                            Image(systemName: "camera.aperture")
+                                .font(.system(size: 60))
+                                .foregroundColor(.gray)
+                                .symbolEffect(.pulse) // 呼吸动画
+                            
+                            ProgressView()
+                                .tint(.white)
+                            
+                            Text("唤醒相机与 AI 引擎...")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundColor(.gray)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color.black.edgesIgnoringSafeArea(.all))
+                        .transition(.opacity)
                     }
                 }
+                // 绑定开机动画
+                .animation(.easeInOut(duration: 0.6), value: cameraVM.isSessionRunning)
             }
             
             VStack {
@@ -69,14 +94,19 @@ struct ContentView: View {
                         cameraVM.cycleAttractionMode()
                     }) {
                         HStack(spacing: 4) {
+                            // ✅ 修复：固定图标和文字的宽度，防止切换时 UI 整体横移
                             Image(systemName: attractionIcon)
                                 .font(.title2)
+                                .frame(width: 24) // 固定图标宽度
+                            
                             Text(attractionText)
                                 .font(.caption2)
                                 .fontWeight(.bold)
+                                .frame(width: 42, alignment: .leading) // 固定文字宽度
                         }
                         .foregroundColor(attractionColor)
-                        .padding(10)
+                        .padding(.vertical, 10)
+                        .padding(.horizontal, 12)
                         .background(Color.black.opacity(0.5))
                         .clipShape(Capsule())
                     }
@@ -114,7 +144,7 @@ struct ContentView: View {
                     Spacer()
                     
                     VStack(spacing: 20) {
-                        // 1. 变焦
+                        // 1. 变焦 Slider
                         VStack(spacing: 6) {
                             Text(zoomLabelText)
                                 .font(.caption2)
@@ -123,6 +153,8 @@ struct ContentView: View {
                                 .padding(4)
                                 .background(Color.black.opacity(0.5))
                                 .clipShape(Capsule())
+                            
+                            // ✅ 修复：大幅增加 Slider 的长度（键程），让单手操作更细腻
                             Slider(
                                 value: Binding(
                                     get: { cameraVM.zoomFactor },
@@ -131,8 +163,9 @@ struct ContentView: View {
                                 in: 1.0...max(1.01, cameraVM.maxZoomFactor)
                             )
                             .tint(.white)
-                            .frame(width: 28, height: 140)
-                            .rotationEffect(.degrees(-90))
+                            .frame(width: 220) // 真正的水平长度
+                            .rotationEffect(.degrees(-90)) // 旋转为垂直
+                            .frame(width: 30, height: 220) // 旋转后的外框限制
                         }
                         .padding(.bottom, 10)
                         
@@ -164,7 +197,7 @@ struct ContentView: View {
                                 .clipShape(Circle())
                         }
                         
-                        // 4. 强制抓拍按钮 (New!)
+                        // 4. 强制抓拍按钮
                         Button(action: {
                             cameraVM.forceCapture()
                         }) {
@@ -302,7 +335,7 @@ struct ContentView: View {
     }
 }
 
-// 快门样式
+// 保持不变
 struct ShutterButtonView: View {
     let isAIEnabled: Bool
     let isScanning: Bool
@@ -327,7 +360,7 @@ struct ShutterButtonView: View {
     }
 }
 
-// HUD 保持不变
+// 保持不变
 struct DogFeaturesHUD: View {
     let face: DogFaceFeatures
     let screenSize: CGSize
