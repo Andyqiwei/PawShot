@@ -1,48 +1,58 @@
 import SwiftUI
 import Photos
 
+private enum GalleryTheme {
+    static let burgundy = Color(red: 0.365, green: 0.192, blue: 0.224)
+    static let cream = Color(red: 0.99, green: 0.96, blue: 0.96)
+}
+
 struct SessionGalleryView: View {
     @ObservedObject var cameraVM: CameraViewModel
     @Environment(\.dismiss) var dismiss
     var onDismiss: (() -> Void)?
-    
-    // 状态
+    var embedInTab: Bool = false
+
     @State private var isEditing = false
     @State private var selectedItems = Set<String>()
-    
-    // 选中的大图 ID
     @State private var selectedPhotoId: String?
-    
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 3)
-    
+
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 3)
+
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // 内容区域
-                if cameraVM.sessionPhotos.isEmpty {
-                    emptyStateView
-                } else {
-                    ScrollView {
-                        LazyVGrid(columns: columns, spacing: 2) {
-                            ForEach(cameraVM.sessionPhotos) { item in
-                                PhotoGridCell(
-                                    item: item,
-                                    isEditing: isEditing,
-                                    isSelected: selectedItems.contains(item.localIdentifier),
-                                    onTap: {
-                                        if isEditing {
-                                            toggleSelection(for: item.localIdentifier)
-                                        } else {
-                                            // 点击进入大图浏览
-                                            selectedPhotoId = item.localIdentifier
-                                        }
+            ZStack {
+                GalleryTheme.cream.ignoresSafeArea()
+
+                VStack(spacing: 0) {
+                    if cameraVM.sessionPhotos.isEmpty {
+                        emptyStateView
+                    } else {
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 0) {
+                                galleryHeaderBlock
+                                    .padding(.horizontal, 20)
+                                    .padding(.top, 8)
+                                    .padding(.bottom, 16)
+
+                                LazyVGrid(columns: columns, spacing: 0) {
+                                    ForEach(cameraVM.sessionPhotos) { item in
+                                        PhotoGridCell(
+                                            item: item,
+                                            isEditing: isEditing,
+                                            isSelected: selectedItems.contains(item.localIdentifier),
+                                            onTap: {
+                                                if isEditing {
+                                                    toggleSelection(for: item.localIdentifier)
+                                                } else {
+                                                    selectedPhotoId = item.localIdentifier
+                                                }
+                                            }
+                                        )
                                     }
-                                )
+                                }
                             }
                         }
-                        .padding(.top, 2)
                     }
-                }
                 
                 // 底部删除工具栏 (仅编辑模式)
                 if isEditing {
@@ -65,12 +75,13 @@ struct SessionGalleryView: View {
                         .background(Color(UIColor.systemBackground))
                     }
                 }
+                }
             }
-            .navigationTitle(isEditing ? "选择照片" : "本次拍摄")
+            .navigationTitle(isEditing ? "选择照片" : "")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    if !isEditing {
+                    if !embedInTab && !isEditing {
                         Button("关闭") {
                             onDismiss?()
                             dismiss()
@@ -85,6 +96,8 @@ struct SessionGalleryView: View {
                                 selectedItems.removeAll()
                             }
                         }
+                        .fontWeight(.semibold)
+                        .foregroundStyle(GalleryTheme.burgundy)
                     }
                 }
             }
@@ -112,17 +125,48 @@ struct SessionGalleryView: View {
             }
         }
     }
-    
+
+    private var galleryHeaderBlock: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "pawprint.fill")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(GalleryTheme.burgundy)
+                Text("SMART CURATION")
+                    .font(.caption.weight(.heavy))
+                    .tracking(0.8)
+                    .foregroundStyle(GalleryTheme.burgundy)
+            }
+            Text("Gallery")
+                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .foregroundStyle(.primary)
+            Text("Your pet's best moments, curated by AI")
+                .font(.subheadline)
+                .foregroundStyle(GalleryTheme.burgundy.opacity(0.55))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     private var emptyStateView: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 16) {
+            galleryHeaderBlock
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+
+            Spacer(minLength: 20)
+
             Image(systemName: "photo.on.rectangle.angled")
                 .font(.system(size: 56))
-                .foregroundColor(.secondary)
+                .foregroundStyle(GalleryTheme.burgundy.opacity(0.35))
             Text("暂无拍摄照片")
                 .font(.headline)
+                .foregroundStyle(GalleryTheme.burgundy)
             Text("拍几张宠物照后会显示在这里")
                 .font(.subheadline)
-                .foregroundColor(.secondary)
+                .foregroundStyle(GalleryTheme.burgundy.opacity(0.5))
+
+            Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -365,34 +409,43 @@ struct PhotoGridCell: View {
     let isEditing: Bool
     let isSelected: Bool
     let onTap: () -> Void
-    
+
+    private let burgundy = Color(red: 0.365, green: 0.192, blue: 0.224)
+
     var body: some View {
         Button(action: onTap) {
-            ZStack(alignment: .bottomTrailing) {
-                Image(uiImage: item.thumbnail)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
-                    .aspectRatio(1, contentMode: .fit)
-                    .clipped()
-                    .opacity(isEditing && !isSelected ? 0.7 : 1.0)
-                
-                if isEditing {
-                    ZStack {
-                        Circle()
-                            .fill(isSelected ? Color.blue : Color.black.opacity(0.4))
-                            .frame(width: 24, height: 24)
-                        if isSelected {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(.white)
-                        } else {
-                            Circle().stroke(Color.white, lineWidth: 2).frame(width: 22, height: 22)
+            GeometryReader { geo in
+                let side = geo.size.width
+                ZStack(alignment: .topTrailing) {
+                    Image(uiImage: item.thumbnail)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: side, height: side)
+                        .clipped()
+                        .opacity(isEditing && !isSelected ? 0.72 : 1.0)
+
+                    if isEditing {
+                        ZStack {
+                            if isSelected {
+                                Circle()
+                                    .fill(burgundy)
+                                    .frame(width: 28, height: 28)
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 13, weight: .heavy))
+                                    .foregroundStyle(.white)
+                            } else {
+                                Circle()
+                                    .strokeBorder(.white, lineWidth: 2.5)
+                                    .background(Circle().fill(Color.black.opacity(0.25)))
+                                    .frame(width: 28, height: 28)
+                            }
                         }
+                        .padding(8)
                     }
-                    .padding(6)
                 }
+                .frame(width: side, height: side)
             }
+            .aspectRatio(1, contentMode: .fit)
         }
         .buttonStyle(.plain)
     }

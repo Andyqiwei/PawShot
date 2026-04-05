@@ -1,25 +1,77 @@
 import SwiftUI
 
+enum PawShotMainTab: Hashable {
+    case live, gallery, studio, settings
+}
+
 struct ContentView: View {
     @StateObject private var cameraVM = CameraViewModel()
-    
-    @State private var showSoundLibrary = false
+
+    @State private var selectedTab: PawShotMainTab = .live
     @State private var showSessionGallery = false
+
+    var body: some View {
+        TabView(selection: $selectedTab) {
+            CameraTabView(showSessionGallery: $showSessionGallery)
+                .tag(PawShotMainTab.live)
+                .tabItem {
+                    Label("Live", systemImage: "video.fill")
+                }
+
+            SessionGalleryView(cameraVM: cameraVM, onDismiss: nil, embedInTab: true)
+                .tag(PawShotMainTab.gallery)
+                .tabItem {
+                    Label("Gallery", systemImage: "photo.on.rectangle.angled")
+                }
+
+            SoundLibraryView(soundManager: cameraVM.soundManager, embedInTab: true)
+                .tag(PawShotMainTab.studio)
+                .tabItem {
+                    Label("Studio", systemImage: "sparkles")
+                }
+
+            Text("Settings")
+                .tag(PawShotMainTab.settings)
+                .tabItem {
+                    Label("Settings", systemImage: "gearshape.fill")
+                }
+        }
+        .environmentObject(cameraVM)
+        .onAppear(perform: refreshSessionForCurrentContext)
+        .onChange(of: selectedTab) { _, _ in refreshSessionForCurrentContext() }
+        .onChange(of: showSessionGallery) { _, _ in refreshSessionForCurrentContext() }
+        .sheet(isPresented: $showSessionGallery) {
+            SessionGalleryView(cameraVM: cameraVM, onDismiss: { showSessionGallery = false }, embedInTab: false)
+        }
+    }
+
+    private func refreshSessionForCurrentContext() {
+        let shouldRun = selectedTab == .live && !showSessionGallery
+        if shouldRun {
+            cameraVM.startSession()
+        } else {
+            cameraVM.stopSession()
+        }
+    }
+}
+
+struct CameraTabView: View {
+    @EnvironmentObject private var cameraVM: CameraViewModel
+    @Binding var showSessionGallery: Bool
+
     @State private var pinchStartZoom: CGFloat = 1.0
     @State private var isPinching = false
-    
+
     var body: some View {
         ZStack {
-            Color.black.edgesIgnoringSafeArea(.all)
-            
-            // 1. 相机预览层与加载状态
+            Color.black.ignoresSafeArea()
+
             GeometryReader { geo in
                 ZStack {
                     if cameraVM.isSessionRunning {
-                        // 📷 相机画面
                         CameraPreviewView(session: cameraVM.session)
-                            .edgesIgnoringSafeArea(.all)
-                            .transition(.opacity) // 平滑渐显
+                            .ignoresSafeArea()
+                            .transition(.opacity)
                             .gesture(
                                 MagnificationGesture()
                                     .onChanged { scale in
@@ -35,8 +87,7 @@ struct ContentView: View {
                                         pinchStartZoom = cameraVM.zoomFactor
                                     }
                             )
-                        
-                        // MARK: - AI 实时特征点 HUD
+
                         if cameraVM.isAIEnabled && cameraVM.isAIScanning {
                             if let face = cameraVM.detectedFace {
                                 DogFeaturesHUD(face: face, screenSize: geo.size)
@@ -49,7 +100,7 @@ struct ContentView: View {
                                         Text("寻找狗狗正脸...")
                                             .font(.subheadline)
                                             .fontWeight(.medium)
-                                            .foregroundColor(.white)
+                                            .foregroundStyle(.white)
                                     }
                                     .padding(12)
                                     .background(.ultraThinMaterial)
@@ -60,328 +111,337 @@ struct ContentView: View {
                             }
                         }
                     } else {
-                        // ⏳ 加载占位界面 (告别黑屏)
                         VStack(spacing: 20) {
                             Image(systemName: "camera.aperture")
                                 .font(.system(size: 60))
-                                .foregroundColor(.gray)
-                                .symbolEffect(.pulse) // 呼吸动画
-                            
+                                .foregroundStyle(.gray)
+                                .symbolEffect(.pulse)
+
                             ProgressView()
                                 .tint(.white)
-                            
+
                             Text("唤醒相机与 AI 引擎...")
                                 .font(.subheadline)
                                 .fontWeight(.medium)
-                                .foregroundColor(.gray)
+                                .foregroundStyle(.gray)
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Color.black.edgesIgnoringSafeArea(.all))
+                        .background(Color.black.ignoresSafeArea())
                         .transition(.opacity)
                     }
                 }
-                // 绑定开机动画
                 .animation(.easeInOut(duration: 0.6), value: cameraVM.isSessionRunning)
             }
-            
+
             VStack {
-                // MARK: - 顶部工具栏
-                HStack(spacing: 15) {
-                    // 左上：诱导模式设置
-                    Button(action: {
-                        let generator = UIImpactFeedbackGenerator(style: .light)
-                        generator.impactOccurred()
-                        cameraVM.cycleAttractionMode()
-                    }) {
-                        HStack(spacing: 4) {
-                            // ✅ 修复：固定图标和文字的宽度，防止切换时 UI 整体横移
-                            Image(systemName: attractionIcon)
-                                .font(.title2)
-                                .frame(width: 24) // 固定图标宽度
-                            
-                            Text(attractionText)
-                                .font(.caption2)
-                                .fontWeight(.bold)
-                                .frame(width: 42, alignment: .leading) // 固定文字宽度
-                        }
-                        .foregroundColor(attractionColor)
-                        .padding(.vertical, 10)
-                        .padding(.horizontal, 12)
-                        .background(Color.black.opacity(0.5))
-                        .clipShape(Capsule())
-                    }
-                    
-                    // 中间：AI 开关
-                    Button(action: {
-                        let generator = UIImpactFeedbackGenerator(style: .medium)
-                        generator.impactOccurred()
-                        cameraVM.isAIEnabled.toggle()
-                    }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "brain.head.profile")
-                                .font(.title2)
-                            if cameraVM.isAIEnabled {
-                                Text("AI AUTO")
-                                    .font(.caption2)
-                                    .fontWeight(.heavy)
-                            }
-                        }
-                        .foregroundColor(cameraVM.isAIEnabled ? .white : .gray)
-                        .padding(10)
-                        .background(cameraVM.isAIEnabled ? Color.green.opacity(0.8) : Color.black.opacity(0.5))
-                        .clipShape(Capsule())
-                    }
-                    
-                    Spacer()
-                }
-                .padding(.top, 50)
-                .padding(.horizontal)
-                
+                topBar
+                    .captureRect(0)
+
                 Spacer()
-                
-                // MARK: - 右侧区域 (变焦 + 诱导 + 强制抓拍)
+
                 HStack(alignment: .bottom) {
                     Spacer()
-                    
-                    VStack(spacing: 20) {
-                        // 1. 变焦 Slider
-                        VStack(spacing: 6) {
-                            Text(zoomLabelText)
-                                .font(.caption2)
-                                .fontWeight(.bold)
-                                .foregroundColor(.white)
-                                .padding(4)
-                                .background(Color.black.opacity(0.5))
-                                .clipShape(Capsule())
-                            
-                            // ✅ 修复：大幅增加 Slider 的长度（键程），让单手操作更细腻
-                            Slider(
-                                value: Binding(
-                                    get: { cameraVM.zoomFactor },
-                                    set: { cameraVM.setZoom($0) }
-                                ),
-                                in: 1.0...max(1.01, cameraVM.maxZoomFactor)
-                            )
-                            .tint(.white)
-                            .frame(width: 220) // 真正的水平长度
-                            .rotationEffect(.degrees(-90)) // 旋转为垂直
-                            .frame(width: 30, height: 220) // 旋转后的外框限制
-                        }
-                        .padding(.bottom, 10)
-                        
-                        // 2. 手动闪光
-                        Button(action: {
-                            let generator = UIImpactFeedbackGenerator(style: .medium)
-                            generator.impactOccurred()
-                            cameraVM.triggerManualFlash()
-                        }) {
-                            Image(systemName: "flashlight.on.fill")
-                                .font(.title2)
-                                .foregroundColor(cameraVM.attractionMode == .constant ? .yellow : .white)
-                                .padding(14)
-                                .background(Color.gray.opacity(0.6))
-                                .clipShape(Circle())
-                        }
-                        
-                        // 3. 手动声音
-                        Button(action: {
-                            let generator = UIImpactFeedbackGenerator(style: .medium)
-                            generator.impactOccurred()
-                            cameraVM.triggerManualSound()
-                        }) {
-                            Image(systemName: "speaker.wave.3.fill")
-                                .font(.title2)
-                                .foregroundColor(.white)
-                                .padding(14)
-                                .background(Color.blue.opacity(0.7))
-                                .clipShape(Circle())
-                        }
-                        
-                        // 4. 强制抓拍按钮
-                        Button(action: {
-                            cameraVM.forceCapture()
-                        }) {
-                            Image(systemName: "camera.circle.fill")
-                                .font(.largeTitle)
-                                .foregroundColor(.white)
-                                .padding(8)
-                                .background(Color.red.opacity(0.8))
-                                .clipShape(Circle())
-                                .shadow(radius: 4)
-                        }
-                    }
-                    .padding(.trailing, 12)
-                    .padding(.bottom, 20)
+                    rightRail
+                        .captureRect(1)
                 }
                 .frame(maxHeight: .infinity)
-                
-                // MARK: - 底部操作栏
-                HStack(spacing: 16) {
-                    // 相册
-                    Button(action: { showSessionGallery = true }) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(Color.black.opacity(0.6))
-                                .frame(width: 56, height: 56)
-                                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.5), lineWidth: 1))
-                            if let thumb = cameraVM.lastCapturedThumbnail {
-                                Image(uiImage: thumb)
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                                    .frame(width: 56, height: 56)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                            } else {
-                                Image(systemName: "photo.on.rectangle.angled")
-                                    .font(.title2)
-                                    .foregroundColor(.white.opacity(0.8))
-                            }
-                        }
-                        .frame(width: 56, height: 56)
-                    }
-                    .buttonStyle(.plain)
-                    
-                    // 声音库
-                    Button(action: { showSoundLibrary = true }) {
-                        VStack(spacing: 4) {
-                            Image(systemName: "waveform.circle.fill")
-                                .font(.largeTitle)
-                            Text("Sounds")
-                                .font(.caption2)
-                                .fontWeight(.bold)
-                        }
-                        .foregroundColor(.white)
-                    }
-                    .frame(width: 80)
-                    
-                    Spacer()
-                    
-                    // 📸 主快门 (AI Start/Stop)
-                    Button(action: {
-                        let generator = UIImpactFeedbackGenerator(style: .medium)
-                        generator.impactOccurred()
-                        cameraVM.handleShutterPress()
-                    }) {
-                        ShutterButtonView(
-                            isAIEnabled: cameraVM.isAIEnabled,
-                            isScanning: cameraVM.isAIScanning
-                        )
-                    }
-                    
-                    Spacer()
-                    
-                    // 翻转
-                    Button(action: { cameraVM.switchCamera() }) {
-                        VStack(spacing: 4) {
-                            Image(systemName: "camera.rotate.fill")
-                                .font(.largeTitle)
-                            Text("Flip")
-                                .font(.caption2)
-                                .fontWeight(.bold)
-                        }
-                        .foregroundColor(.white)
-                    }
-                    .padding(.trailing, 30)
-                    .frame(width: 80)
-                }
-                .padding(.leading, 20)
-                .padding(.bottom, 40)
+
+                bottomFloatingControls
+                    .captureRect(2)
             }
         }
-        .onAppear { cameraVM.startSession() }
-        .onChange(of: showSessionGallery) { isOpen in
-            if isOpen { cameraVM.stopSession() }
-            else { cameraVM.startSession() }
-        }
-        .onChange(of: showSoundLibrary) { isOpen in
-            if isOpen { cameraVM.stopSession() }
-            else { cameraVM.startSession() }
-        }
-        .sheet(isPresented: $showSoundLibrary) {
-            SoundLibraryView(soundManager: cameraVM.soundManager)
-        }
-        .sheet(isPresented: $showSessionGallery) {
-            SessionGalleryView(cameraVM: cameraVM, onDismiss: { showSessionGallery = false })
-        }
     }
-    
-    var attractionIcon: String {
+
+    private var topBar: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Text("PawShot")
+                .font(.system(size: 26, weight: .bold, design: .default))
+                .italic()
+                .foregroundStyle(.white)
+
+            Spacer(minLength: 8)
+
+            HStack(spacing: 8) {
+                Button {
+                    let generator = UIImpactFeedbackGenerator(style: .medium)
+                    generator.impactOccurred()
+                    cameraVM.isAIEnabled.toggle()
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "sparkles")
+                            .font(.body.weight(.semibold))
+                        Text("AI AUTO")
+                            .font(.caption.weight(.heavy))
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 12)
+                    .background(
+                        cameraVM.isAIEnabled
+                            ? Color.cyan.opacity(0.88)
+                            : Color.clear
+                    )
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    let generator = UIImpactFeedbackGenerator(style: .light)
+                    generator.impactOccurred()
+                    cameraVM.cycleAttractionMode()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: attractionIcon)
+                            .font(.body.weight(.semibold))
+                            .frame(width: 22, height: 22)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Attraction")
+                                .font(.caption.weight(.bold))
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                            Text(attractionText)
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.white.opacity(0.85))
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                        }
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.vertical, 6)
+                    .padding(.horizontal, 10)
+                }
+                .buttonStyle(.plain)
+            }
+            .fixedSize(horizontal: true, vertical: false)
+            .padding(5)
+            .background(.ultraThinMaterial)
+            .clipShape(Capsule())
+        }
+        .padding(.top, 12)
+        .padding(.horizontal, 16)
+    }
+
+    private var rightRail: some View {
+        VStack(spacing: 18) {
+            VStack(spacing: 8) {
+                Text(zoomMaxLabelText)
+                    .font(.caption2)
+                    .fontWeight(.bold)
+                    .foregroundStyle(.white)
+
+                Slider(
+                    value: Binding(
+                        get: { cameraVM.zoomFactor },
+                        set: { cameraVM.setZoom($0) }
+                    ),
+                    in: 1.0...max(1.01, cameraVM.maxZoomFactor)
+                )
+                .tint(.yellow)
+                .frame(width: 200)
+                .rotationEffect(.degrees(-90))
+                .frame(width: 28, height: 200)
+
+                Text(zoomCurrentLabelText)
+                    .font(.caption2)
+                    .fontWeight(.bold)
+                    .foregroundStyle(.yellow)
+            }
+            .padding(.vertical, 14)
+            .padding(.horizontal, 6)
+            .background(.ultraThinMaterial)
+            .clipShape(Capsule())
+
+            Button {
+                let generator = UIImpactFeedbackGenerator(style: .medium)
+                generator.impactOccurred()
+                cameraVM.triggerManualFlash()
+            } label: {
+                VStack(spacing: 5) {
+                    ZStack {
+                        Circle()
+                            .fill(.ultraThinMaterial)
+                            .frame(width: 52, height: 52)
+                            .shadow(color: Color.pink.opacity(0.45), radius: 10, y: 0)
+                        Image(systemName: "bolt.fill")
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(.white)
+                    }
+                    Text("FLASH")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(.white)
+                }
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.trailing, 10)
+        .padding(.bottom, 12)
+    }
+
+    private var bottomFloatingControls: some View {
+        HStack(spacing: 0) {
+            Button {
+                showSessionGallery = true
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(.ultraThinMaterial)
+                        .frame(width: 54, height: 54)
+                    if let thumb = cameraVM.lastCapturedThumbnail {
+                        Image(uiImage: thumb)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 48, height: 48)
+                            .clipShape(Circle())
+                    } else {
+                        Image(systemName: "photo.on.rectangle.angled")
+                            .font(.title3)
+                            .foregroundStyle(.white.opacity(0.9))
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            Button {
+                let generator = UIImpactFeedbackGenerator(style: .medium)
+                generator.impactOccurred()
+                cameraVM.triggerManualSound()
+            } label: {
+                Image(systemName: "speaker.wave.3.fill")
+                    .font(.title2)
+                    .foregroundStyle(.white)
+                    .frame(width: 52, height: 52)
+                    .background(.ultraThinMaterial)
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            Button {
+                let generator = UIImpactFeedbackGenerator(style: .medium)
+                generator.impactOccurred()
+                cameraVM.handleShutterPress()
+            } label: {
+                ShutterButtonView(
+                    isAIEnabled: cameraVM.isAIEnabled,
+                    isScanning: cameraVM.isAIScanning
+                )
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            Button {
+                cameraVM.switchCamera()
+            } label: {
+                Image(systemName: "camera.rotate.fill")
+                    .font(.title2)
+                    .foregroundStyle(.white)
+                    .frame(width: 52, height: 52)
+                    .background(.ultraThinMaterial)
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 12)
+    }
+
+    private var attractionIcon: String {
         switch cameraVM.attractionMode {
         case .day: return "sun.max.fill"
         case .night: return "moon.fill"
         case .constant: return "flashlight.on.fill"
         }
     }
-    
-    var attractionColor: Color {
-        switch cameraVM.attractionMode {
-        case .day: return .white
-        case .night: return .yellow
-        case .constant: return .orange
-        }
-    }
-    
-    var attractionText: String {
+
+    private var attractionText: String {
         switch cameraVM.attractionMode {
         case .day: return "DAY"
         case .night: return "NIGHT"
         case .constant: return "ON"
         }
     }
-    
-    var zoomLabelText: String {
+
+    private var zoomMaxLabelText: String {
+        let m = cameraVM.maxZoomFactor
+        if m < 1.1 { return "1x" }
+        return String(format: "%.0fx", m)
+    }
+
+    private var zoomCurrentLabelText: String {
         let z = cameraVM.zoomFactor
-        if z < 1.1 { return "1x" }
+        if z < 1.1 { return "1.0x" }
         return String(format: "%.1fx", z)
     }
 }
 
-// 保持不变
 struct ShutterButtonView: View {
     let isAIEnabled: Bool
     let isScanning: Bool
-    
+
+    private let yellowFill = Color(red: 1, green: 0.86, blue: 0.15)
+
     var body: some View {
         ZStack {
+            Circle()
+                .strokeBorder(.white.opacity(0.95), lineWidth: 2)
+                .frame(width: 86, height: 86)
+            Circle()
+                .strokeBorder(.white.opacity(0.75), lineWidth: 1.5)
+                .frame(width: 76, height: 76)
+
+            Circle()
+                .fill(yellowFill)
+                .frame(width: 68, height: 68)
+
             if isAIEnabled {
                 if isScanning {
-                    Circle().fill(Color.red).frame(width: 72, height: 72)
-                    RoundedRectangle(cornerRadius: 4).fill(Color.white).frame(width: 24, height: 24)
-                    Circle().stroke(Color.red, lineWidth: 4).frame(width: 80, height: 80)
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(Color.black.opacity(0.88))
+                        .frame(width: 26, height: 26)
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(.white)
+                        .frame(width: 22, height: 22)
                 } else {
-                    Circle().fill(Color.white).frame(width: 72, height: 72)
-                    Text("START").font(.caption).fontWeight(.black).foregroundColor(.black)
-                    Circle().stroke(Color.green, lineWidth: 4).frame(width: 80, height: 80)
+                    Text("START")
+                        .font(.system(size: 11, weight: .black))
+                        .foregroundStyle(.black)
                 }
             } else {
-                Circle().fill(Color.white).frame(width: 72, height: 72)
-                Circle().stroke(Color.white, lineWidth: 4).frame(width: 80, height: 80)
+                Image(systemName: "camera.aperture")
+                    .font(.system(size: 28, weight: .bold))
+                    .foregroundStyle(.black)
             }
         }
     }
 }
 
-// 保持不变
 struct DogFeaturesHUD: View {
     let face: DogFaceFeatures
     let screenSize: CGSize
-    
+
     var body: some View {
         let width = screenSize.width
         let height = screenSize.height
-        
+
         func convert(_ point: CGPoint) -> CGPoint {
-            return CGPoint(
+            CGPoint(
                 x: point.x * width,
                 y: (1 - point.y) * height
             )
         }
-        
+
         let leftEye = convert(face.leftEye)
         let rightEye = convert(face.rightEye)
         let nose = convert(face.nose)
-        
+
         let color: Color = face.isLookingAtCamera ? .green : .yellow
-        
+
         return ZStack {
             Path { path in
                 path.move(to: leftEye)
@@ -391,18 +451,18 @@ struct DogFeaturesHUD: View {
             }
             .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
             .shadow(color: color.opacity(0.8), radius: 4)
-            
+
             Circle().stroke(color, lineWidth: 2).frame(width: 20, height: 20).position(leftEye)
             Circle().stroke(color, lineWidth: 2).frame(width: 20, height: 20).position(rightEye)
             Circle().fill(color).frame(width: 15, height: 15).position(nose)
-            
+
             if face.isLookingAtCamera {
                 Text("LOCKED")
                     .font(.caption2)
                     .fontWeight(.black)
                     .padding(4)
                     .background(Color.green)
-                    .foregroundColor(.black)
+                    .foregroundStyle(.black)
                     .cornerRadius(4)
                     .position(x: nose.x, y: nose.y + 30)
             }

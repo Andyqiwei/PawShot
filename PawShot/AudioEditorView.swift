@@ -1,199 +1,307 @@
 import SwiftUI
 import AVFoundation
 
+private enum AudioEditorTheme {
+    static let burgundy = Color(red: 0.365, green: 0.192, blue: 0.224)
+    static let cream = Color(red: 0.99, green: 0.96, blue: 0.96)
+    static let pinkPlate = Color(red: 1.0, green: 0.88, blue: 0.90)
+    static let barPink = Color(red: 0.98, green: 0.78, blue: 0.82)
+    static let tealLine = Color(red: 0.15, green: 0.55, blue: 0.58)
+    static let purpleHandle = Color(red: 0.28, green: 0.12, blue: 0.32)
+    static let recordYellow = Color(red: 1.0, green: 0.86, blue: 0.15)
+    static let boostOrange = Color(red: 1.0, green: 0.48, blue: 0.12)
+    static let saveGradientTop = Color(red: 0.42, green: 0.18, blue: 0.28)
+    static let saveGradientBottom = Color(red: 0.32, green: 0.12, blue: 0.22)
+}
+
 struct AudioEditorView: View {
     let soundItem: SoundItem
     @ObservedObject var soundManager: SoundManager
-    @Environment(\.dismiss) var dismiss
-    
-    // 波形与时间状态
+    @Environment(\.dismiss) private var dismiss
+
     @State private var waveformSamples: [Float] = []
     @State private var duration: Double = 0
     @State private var startTime: Double = 0
     @State private var endTime: Double = 1
-    
-    // 播放状态
+
     @State private var isPlaying = false
     @State private var player: AVAudioPlayer?
     @State private var isProcessing = false
-    
-    // 音量状态
+
     @State private var volume: Float = 1.0
-    
+
     var body: some View {
-        VStack {
-            Text("编辑音频: \(soundItem.name)")
-                .font(.headline)
-                .padding(.top)
-            
-            if duration > 0 {
-                // MARK: - 1. 波形编辑区
-                VStack {
-                    ZStack(alignment: .leading) {
-                        // 底层波形
-                        WaveformShape(samples: waveformSamples)
-                            .fill(Color.gray.opacity(0.3))
-                            .frame(height: 100)
-                        
-                        // 选中区域高亮
-                        GeometryReader { geo in
-                            let width = geo.size.width
-                            let startX = width * (startTime / duration)
-                            let endX = width * (endTime / duration)
-                            
-                            Rectangle()
-                                .fill(Color.blue.opacity(0.2))
-                                .frame(width: endX - startX, height: 100)
-                                .offset(x: startX)
-                        }
-                        .frame(height: 100)
-                        
-                        // 拖拽手柄
-                        GeometryReader { geo in
-                            let width = geo.size.width
-                            
-                            // 左手柄 (Start)
-                            DragHandle()
-                                .position(x: width * (startTime / duration), y: 50)
-                                .gesture(
-                                    DragGesture()
-                                        .onChanged { value in
-                                            let newTime = (value.location.x / width) * duration
-                                            startTime = min(max(0, newTime), endTime - 0.2)
-                                        }
-                                )
-                            
-                            // 右手柄 (End)
-                            DragHandle()
-                                .position(x: width * (endTime / duration), y: 50)
-                                .gesture(
-                                    DragGesture()
-                                        .onChanged { value in
-                                            let newTime = (value.location.x / width) * duration
-                                            endTime = max(min(duration, newTime), startTime + 0.2)
-                                        }
-                                )
-                        }
-                        .frame(height: 100)
-                    }
-                    .padding()
-                    .background(Color.black.opacity(0.05))
-                    .cornerRadius(10)
-                    
-                    // 时间显示
-                    HStack {
-                        Text(formatTime(startTime))
-                        Spacer()
-                        Text(formatTime(endTime))
-                    }
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal)
-                }
-                
-                // MARK: - 2. 音量调节区 (150% + 磁吸)
-                VStack(spacing: 8) {
-                    HStack(spacing: 15) {
-                        // 图标
-                        Image(systemName: volume > 1.0 ? "speaker.wave.3.fill" : "speaker.wave.2.fill")
-                            .foregroundColor(volume > 1.0 ? .orange : .gray)
-                        
-                        // 滑块
-                        Slider(value: $volume, in: 0.0...1.5) // ✅ 最大 150%
-                            .accentColor(volume > 1.0 ? .orange : .blue)
-                            .onChange(of: volume) { newValue in
-                                // ✅ 磁吸逻辑：如果在 1.0 附近 (±3%)，强制吸附
-                                if abs(newValue - 1.0) < 0.03 {
-                                    if volume != 1.0 {
-                                        // 触发轻微震动反馈
-                                        let generator = UISelectionFeedbackGenerator()
-                                        generator.selectionChanged()
-                                        volume = 1.0
-                                    }
-                                }
-                                player?.volume = volume
+        NavigationStack {
+            ZStack {
+                AudioEditorTheme.cream.ignoresSafeArea()
+
+                VStack(spacing: 0) {
+                    profileHeader
+                        .padding(.horizontal, 20)
+                        .padding(.top, 8)
+
+                    if duration > 0 {
+                        ScrollView {
+                            VStack(spacing: 18) {
+                                waveformSection
+                                volumeBoostSection
                             }
-                        
-                        // 百分比文字
-                        Text("\(Int(volume * 100))%")
-                            .font(.subheadline)
-                            .fontWeight(.bold)
-                            .foregroundColor(volume > 1.0 ? .orange : .primary)
-                            .lineLimit(1)       // ✅ 强制单行
-                            .minimumScaleFactor(0.8) // 如果字太大允许缩小一点点
-                            .frame(width: 50, alignment: .trailing) // ✅ 固定宽度，防止跳动
-                    }
-                    
-                    // 状态提示文字
-                    if volume > 1.0 {
-                        Text("⚠️ 音量增强 (最大 150%)")
-                            .font(.caption2)
-                            .foregroundColor(.orange)
-                            .transition(.opacity)
-                    } else if volume == 1.0 {
-                        Text("标准音量")
-                            .font(.caption2)
-                            .foregroundColor(.gray)
-                            .transition(.opacity)
-                    } else {
-                        Text("音量衰减")
-                            .font(.caption2)
-                            .foregroundColor(.gray)
-                            .transition(.opacity)
-                    }
-                }
-                .padding()
-                .background(Color.gray.opacity(0.1))
-                .cornerRadius(10)
-                .padding(.horizontal)
-                
-            } else {
-                ProgressView("正在分析声纹...")
-                    .padding()
-            }
-            
-            Spacer()
-            
-            // MARK: - 3. 控制栏
-            HStack(spacing: 40) {
-                // 试听按钮
-                Button(action: togglePreview) {
-                    VStack {
-                        Image(systemName: isPlaying ? "stop.circle.fill" : "play.circle.fill")
-                            .font(.system(size: 50))
-                            .foregroundColor(.blue)
-                        Text(isPlaying ? "停止" : "试听")
-                            .font(.caption)
-                    }
-                }
-                
-                // 保存按钮
-                Button(action: saveChanges) {
-                    VStack {
-                        if isProcessing {
-                            ProgressView()
-                        } else {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 50))
-                                .foregroundColor(.green)
+                            .padding(.horizontal, 18)
+                            .padding(.top, 16)
+                            .padding(.bottom, 12)
                         }
-                        Text("保存修改")
-                            .font(.caption)
+
+                        bottomActionBar
+                            .padding(.horizontal, 18)
+                            .padding(.bottom, 28)
+                    } else {
+                        Spacer()
+                        ProgressView("正在分析声纹...")
+                            .tint(AudioEditorTheme.burgundy)
+                        Spacer()
                     }
                 }
-                .disabled(isProcessing)
             }
-            .padding(.bottom, 30)
+            .navigationTitle("Edit Sound")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                                .font(.subheadline.weight(.semibold))
+                            Text("Studio")
+                                .font(.body.weight(.medium))
+                        }
+                        .foregroundStyle(AudioEditorTheme.burgundy)
+                    }
+                }
+            }
         }
         .onAppear(perform: loadAudioData)
         .onDisappear { stopPreview() }
     }
-    
-    // MARK: - 逻辑方法
-    
-    func loadAudioData() {
-        self.volume = soundItem.volume
-        
+
+    private var profileHeader: some View {
+        VStack(spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill(AudioEditorTheme.recordYellow)
+                    .frame(width: 72, height: 72)
+                Image(systemName: "waveform.and.mic")
+                    .font(.system(size: 30, weight: .semibold))
+                    .foregroundStyle(.black.opacity(0.85))
+            }
+            Text(soundItem.name)
+                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .foregroundStyle(AudioEditorTheme.burgundy)
+                .multilineTextAlignment(.center)
+
+            if duration > 0 {
+                Text("\(formatDurationClock(duration)) Duration • High Fidelity")
+                    .font(.subheadline)
+                    .foregroundStyle(AudioEditorTheme.burgundy.opacity(0.5))
+            } else {
+                Text(soundItem.isSystem ? "系统声音" : "我的录音")
+                    .font(.subheadline)
+                    .foregroundStyle(AudioEditorTheme.burgundy.opacity(0.5))
+            }
+        }
+    }
+
+    private func formatDurationClock(_ seconds: Double) -> String {
+        let s = max(0, Int(seconds.rounded()))
+        let m = s / 60
+        let r = s % 60
+        return String(format: "%d:%02d", m, r)
+    }
+
+    private var waveformSection: some View {
+        VStack(spacing: 10) {
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(AudioEditorTheme.pinkPlate)
+                    .frame(height: 140)
+
+                ZStack(alignment: .leading) {
+                    BarWaveformView(samples: waveformSamples, burgundy: AudioEditorTheme.burgundy, altPink: AudioEditorTheme.barPink)
+                        .frame(height: 120)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+
+                    GeometryReader { geo in
+                        let w = geo.size.width
+                        let startX = w * CGFloat(startTime / duration)
+                        let endX = w * CGFloat(endTime / duration)
+
+                        Rectangle()
+                            .fill(AudioEditorTheme.burgundy.opacity(0.12))
+                            .frame(width: max(0, endX - startX), height: 120)
+                            .offset(x: startX)
+                            .padding(.vertical, 10)
+                    }
+                    .frame(height: 140)
+                    .allowsHitTesting(false)
+
+                    Rectangle()
+                        .fill(AudioEditorTheme.tealLine.opacity(0.85))
+                        .frame(width: 2, height: 108)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    GeometryReader { geo in
+                        let width = geo.size.width
+                        TrimDragHandle()
+                            .position(x: width * CGFloat(startTime / duration), y: 70)
+                            .gesture(
+                                DragGesture()
+                                    .onChanged { value in
+                                        let newTime = (value.location.x / width) * duration
+                                        startTime = min(max(0, newTime), endTime - 0.2)
+                                    }
+                            )
+
+                        TrimDragHandle()
+                            .position(x: width * CGFloat(endTime / duration), y: 70)
+                            .gesture(
+                                DragGesture()
+                                    .onChanged { value in
+                                        let newTime = (value.location.x / width) * duration
+                                        endTime = max(min(duration, newTime), startTime + 0.2)
+                                    }
+                            )
+                    }
+                    .frame(height: 140)
+                }
+            }
+
+            HStack {
+                Text(formatTime(startTime))
+                Spacer()
+                Text(formatTime(endTime))
+            }
+            .font(.caption.weight(.medium))
+            .foregroundStyle(AudioEditorTheme.burgundy.opacity(0.55))
+            .padding(.horizontal, 6)
+        }
+    }
+
+    private var volumeBoostSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Image(systemName: volume > 1.0 ? "speaker.wave.3.fill" : "speaker.wave.2.fill")
+                    .font(.title3)
+                    .foregroundStyle(AudioEditorTheme.burgundy)
+                Text("Volume Boost")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(AudioEditorTheme.burgundy)
+                Spacer()
+                Text("\(Int(volume * 100))%")
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(volume > 1.0 ? AudioEditorTheme.boostOrange : AudioEditorTheme.burgundy)
+                    .frame(minWidth: 52, alignment: .trailing)
+            }
+
+            VolumeBoostSlider(volume: volumeBinding)
+                .frame(height: 52)
+
+            if volume > 1.0 {
+                Text("音量增强 (最大 150%)")
+                    .font(.caption2)
+                    .foregroundStyle(AudioEditorTheme.boostOrange)
+            } else if volume == 1.0 {
+                Text("标准音量")
+                    .font(.caption2)
+                    .foregroundStyle(AudioEditorTheme.burgundy.opacity(0.45))
+            } else {
+                Text("音量衰减")
+                    .font(.caption2)
+                    .foregroundStyle(AudioEditorTheme.burgundy.opacity(0.45))
+            }
+        }
+        .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(AudioEditorTheme.pinkPlate.opacity(0.92))
+        )
+    }
+
+    private var volumeBinding: Binding<Float> {
+        Binding(
+            get: { volume },
+            set: { applyVolumeChange($0) }
+        )
+    }
+
+    private func applyVolumeChange(_ newValue: Float) {
+        var v = newValue
+        if abs(v - 1.0) < 0.03 {
+            if volume != 1.0 {
+                let generator = UISelectionFeedbackGenerator()
+                generator.selectionChanged()
+            }
+            v = 1.0
+        }
+        volume = v
+        player?.volume = v
+    }
+
+    private var bottomActionBar: some View {
+        HStack(spacing: 14) {
+            Button(action: togglePreview) {
+                HStack(spacing: 10) {
+                    Image(systemName: isPlaying ? "stop.fill" : "play.fill")
+                        .font(.system(size: 18, weight: .bold))
+                    Text(isPlaying ? "Stop" : "Preview")
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                }
+                .foregroundStyle(AudioEditorTheme.burgundy)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 18)
+                .background(
+                    Capsule()
+                        .fill(Color.white.opacity(0.95))
+                        .shadow(color: AudioEditorTheme.burgundy.opacity(0.08), radius: 8, y: 3)
+                )
+            }
+            .buttonStyle(.plain)
+
+            Button(action: saveChanges) {
+                HStack(spacing: 10) {
+                    if isProcessing {
+                        ProgressView()
+                            .tint(.white)
+                    } else {
+                        Image(systemName: "tray.and.arrow.down.fill")
+                            .font(.system(size: 17, weight: .bold))
+                        Text("Save")
+                            .font(.system(size: 17, weight: .bold, design: .rounded))
+                    }
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 18)
+                .background(
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [AudioEditorTheme.saveGradientTop, AudioEditorTheme.saveGradientBottom],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .shadow(color: AudioEditorTheme.burgundy.opacity(0.35), radius: 10, y: 4)
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(isProcessing)
+        }
+    }
+
+    private func loadAudioData() {
+        volume = soundItem.volume
+
         let url: URL
         if soundItem.isSystem {
             url = Bundle.main.url(forResource: soundItem.filename, withExtension: "wav")!
@@ -201,7 +309,7 @@ struct AudioEditorView: View {
             url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
                 .appendingPathComponent(soundItem.filename)
         }
-        
+
         let asset = AVAsset(url: url)
         Task {
             do {
@@ -216,20 +324,20 @@ struct AudioEditorView: View {
             }
         }
     }
-    
-    func extractWaveform(from url: URL) {
+
+    private func extractWaveform(from url: URL) {
         DispatchQueue.global(qos: .userInitiated).async {
             guard let file = try? AVAudioFile(forReading: url),
                   let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: UInt32(file.length)) else { return }
-            
+
             try? file.read(into: buffer)
-            
+
             let frameCount = Int(file.length)
             let samplesPerPoint = frameCount / 100
             guard let channelData = buffer.floatChannelData?[0] else { return }
-            
+
             var points: [Float] = []
-            
+
             if samplesPerPoint > 0 {
                 for i in 0..<100 {
                     let start = i * samplesPerPoint
@@ -243,40 +351,40 @@ struct AudioEditorView: View {
                     }
                 }
             }
-            
-            if let max = points.max(), max > 0 {
-                points = points.map { $0 / max }
+
+            if let maxV = points.max(), maxV > 0 {
+                points = points.map { $0 / maxV }
             }
-            
+
             DispatchQueue.main.async {
                 self.waveformSamples = points
             }
         }
     }
-    
-    func togglePreview() {
+
+    private func togglePreview() {
         if isPlaying {
             stopPreview()
         } else {
             playPreview()
         }
     }
-    
-    func playPreview() {
+
+    private func playPreview() {
         let url: URL
         if soundItem.isSystem {
-             url = Bundle.main.url(forResource: soundItem.filename, withExtension: "wav")!
+            url = Bundle.main.url(forResource: soundItem.filename, withExtension: "wav")!
         } else {
-             url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(soundItem.filename)
+            url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(soundItem.filename)
         }
-        
+
         do {
             player = try AVAudioPlayer(contentsOf: url)
             player?.currentTime = startTime
             player?.volume = volume
             player?.play()
             isPlaying = true
-            
+
             Timer.scheduledTimer(withTimeInterval: endTime - startTime, repeats: false) { _ in
                 stopPreview()
             }
@@ -284,27 +392,27 @@ struct AudioEditorView: View {
             print("播放失败")
         }
     }
-    
-    func stopPreview() {
+
+    private func stopPreview() {
         player?.stop()
         isPlaying = false
     }
-    
-    func saveChanges() {
+
+    private func saveChanges() {
         isProcessing = true
         stopPreview()
-        
+
         soundManager.updateVolume(for: soundItem.id, newVolume: volume)
-        
+
         let url: URL
         if soundItem.isSystem {
-             url = Bundle.main.url(forResource: soundItem.filename, withExtension: "wav")!
+            url = Bundle.main.url(forResource: soundItem.filename, withExtension: "wav")!
         } else {
-             url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(soundItem.filename)
+            url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(soundItem.filename)
         }
-        
+
         let isTimeChanged = (abs(startTime) > 0.1 || abs(endTime - duration) > 0.1)
-        
+
         if isTimeChanged {
             soundManager.trimAudio(sourceURL: url, startTime: startTime, endTime: endTime) { newURL in
                 isProcessing = false
@@ -312,11 +420,13 @@ struct AudioEditorView: View {
                     if !soundItem.isSystem {
                         soundManager.replaceSoundFile(for: soundItem.id, newURL: newURL)
                     } else {
-                        let newItem = SoundItem(name: "\(soundItem.name) (剪辑)",
-                                                filename: newURL.lastPathComponent,
-                                                isSystem: false,
-                                                isSelected: true,
-                                                volume: volume)
+                        let newItem = SoundItem(
+                            name: "\(soundItem.name) (剪辑)",
+                            filename: newURL.lastPathComponent,
+                            isSystem: false,
+                            isSelected: true,
+                            volume: volume
+                        )
                         soundManager.sounds.append(newItem)
                         soundManager.saveSounds()
                     }
@@ -328,45 +438,144 @@ struct AudioEditorView: View {
             dismiss()
         }
     }
-    
-    func formatTime(_ time: Double) -> String {
-        return String(format: "%.1fs", time)
+
+    private func formatTime(_ time: Double) -> String {
+        String(format: "%.1fs", time)
     }
 }
 
-// 辅助视图
-struct WaveformShape: Shape {
-    var samples: [Float]
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let width = rect.width
-        let height = rect.height
-        let count = samples.count
-        if count == 0 { return path }
-        
-        let step = width / CGFloat(count)
-        path.move(to: CGPoint(x: 0, y: height / 2))
-        for (index, sample) in samples.enumerated() {
-            let x = CGFloat(index) * step
-            let amplitude = CGFloat(sample) * height / 2
-            path.addLine(to: CGPoint(x: x, y: height / 2 - amplitude))
-            path.addLine(to: CGPoint(x: x, y: height / 2 + amplitude))
-        }
-        return path
-    }
-}
+// MARK: - Bar waveform
 
-struct DragHandle: View {
+private struct BarWaveformView: View {
+    let samples: [Float]
+    let burgundy: Color
+    let altPink: Color
+
     var body: some View {
-        RoundedRectangle(cornerRadius: 2)
-            .fill(Color.blue)
-            .frame(width: 4, height: 100)
-            .overlay(
+        GeometryReader { geo in
+            let h = geo.size.height
+            let w = geo.size.width
+            let n = samples.count
+            let spacing: CGFloat = 2
+            let totalSpacing = spacing * CGFloat(max(n - 1, 0))
+            let barW = n > 0 ? max(2, (w - totalSpacing) / CGFloat(n)) : 2
+
+            HStack(alignment: .center, spacing: spacing) {
+                ForEach(Array(samples.enumerated()), id: \.offset) { index, s in
+                    RoundedRectangle(cornerRadius: barW / 2, style: .continuous)
+                        .fill(index.isMultiple(of: 2) ? burgundy : altPink)
+                        .frame(width: barW, height: max(4, CGFloat(s) * h * 0.92))
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+}
+
+// MARK: - Trim handles
+
+private struct TrimDragHandle: View {
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(AudioEditorTheme.purpleHandle)
+                .frame(width: 5, height: 120)
+
+            VStack(spacing: 2) {
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 9, weight: .heavy))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .heavy))
+            }
+            .foregroundStyle(AudioEditorTheme.purpleHandle)
+            .padding(6)
+            .background(Circle().fill(Color.white).shadow(color: .black.opacity(0.15), radius: 3, y: 1))
+        }
+    }
+}
+
+// MARK: - Volume boost slider (0–100% burgundy/pink, 100–150% orange)
+
+private struct VolumeBoostSlider: View {
+    @Binding var volume: Float
+
+    private let trackHeight: CGFloat = 10
+    private let thumbSize: CGFloat = 28
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            let h = geo.size.height
+            let cy = h / 2 - 8
+            let fillEnd = w * CGFloat(volume / 1.5)
+            let splitX = w * CGFloat(1.0 / 1.5)
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(AudioEditorTheme.barPink.opacity(0.55))
+                    .frame(width: w, height: trackHeight)
+                    .position(x: w / 2, y: cy)
+
+                ZStack(alignment: .leading) {
+                    if fillEnd > 0 {
+                        HStack(spacing: 0) {
+                            let burgundyW = min(fillEnd, splitX)
+                            if burgundyW > 0 {
+                                LinearGradient(
+                                    colors: [AudioEditorTheme.burgundy, AudioEditorTheme.barPink],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                                .frame(width: burgundyW, height: trackHeight)
+                            }
+                            if fillEnd > splitX {
+                                AudioEditorTheme.boostOrange
+                                    .frame(width: fillEnd - splitX, height: trackHeight)
+                            }
+                        }
+                        .clipShape(Capsule())
+                        .frame(width: fillEnd, alignment: .leading)
+                    }
+                }
+                .frame(width: w, height: trackHeight, alignment: .leading)
+                .position(x: w / 2, y: cy)
+                .allowsHitTesting(false)
+
+                let thumbCenterX = fillEnd
                 Circle()
                     .fill(Color.white)
-                    .shadow(radius: 2)
-                    .frame(width: 20, height: 20)
-                    .offset(y: -50)
+                    .frame(width: thumbSize, height: thumbSize)
+                    .overlay(
+                        Circle()
+                            .stroke(AudioEditorTheme.boostOrange, lineWidth: 3)
+                    )
+                    .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
+                    .position(x: thumbCenterX, y: cy)
+            }
+            .frame(width: w, height: h)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { gesture in
+                        let x = min(max(0, gesture.location.x), w)
+                        volume = Float(x / w) * 1.5
+                    }
             )
+
+            VStack {
+                Spacer()
+                HStack {
+                    Text("0%")
+                    Spacer()
+                    Text("100%")
+                    Spacer()
+                    Text("150%")
+                }
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(AudioEditorTheme.burgundy.opacity(0.45))
+                .padding(.horizontal, 2)
+                .padding(.top, 6)
+            }
+        }
     }
 }
