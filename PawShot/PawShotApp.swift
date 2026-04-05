@@ -9,9 +9,12 @@ import SwiftUI
 
 @main
 struct PawShotApp: App {
+    @StateObject private var appSettings = AppSettingsStore()
+
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(appSettings)
         }
     }
 }

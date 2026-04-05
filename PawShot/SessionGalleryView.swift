@@ -1,12 +1,8 @@
 import SwiftUI
 import Photos
 
-private enum GalleryTheme {
-    static let burgundy = Color(red: 0.365, green: 0.192, blue: 0.224)
-    static let cream = Color(red: 0.99, green: 0.96, blue: 0.96)
-}
-
 struct SessionGalleryView: View {
+    @EnvironmentObject private var appSettings: AppSettingsStore
     @ObservedObject var cameraVM: CameraViewModel
     @Environment(\.dismiss) var dismiss
     var onDismiss: (() -> Void)?
@@ -18,10 +14,13 @@ struct SessionGalleryView: View {
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 3)
 
+    private var L: L10n { appSettings.strings }
+    private var palette: ThemePalette { appSettings.palette }
+
     var body: some View {
         NavigationStack {
             ZStack {
-                GalleryTheme.cream.ignoresSafeArea()
+                palette.cream.ignoresSafeArea()
 
                 VStack(spacing: 0) {
                     if cameraVM.sessionPhotos.isEmpty {
@@ -59,7 +58,7 @@ struct SessionGalleryView: View {
                     VStack {
                         Divider()
                         HStack {
-                            Text("已选 \(selectedItems.count) 张")
+                            Text(L.gallerySelectedCount(selectedItems.count))
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                             Spacer()
@@ -77,12 +76,12 @@ struct SessionGalleryView: View {
                 }
                 }
             }
-            .navigationTitle(isEditing ? "选择照片" : "")
+            .navigationTitle(isEditing ? L.gallerySelectPhotosNav : "")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     if !embedInTab && !isEditing {
-                        Button("关闭") {
+                        Button(L.galleryClose) {
                             onDismiss?()
                             dismiss()
                         }
@@ -90,14 +89,14 @@ struct SessionGalleryView: View {
                 }
                 ToolbarItem(placement: .primaryAction) {
                     if !cameraVM.sessionPhotos.isEmpty {
-                        Button(isEditing ? "完成" : "选择") {
+                        Button(isEditing ? L.galleryDone : L.gallerySelect) {
                             withAnimation {
                                 isEditing.toggle()
                                 selectedItems.removeAll()
                             }
                         }
                         .fontWeight(.semibold)
-                        .foregroundStyle(GalleryTheme.burgundy)
+                        .foregroundStyle(palette.primary)
                     }
                 }
             }
@@ -131,18 +130,18 @@ struct SessionGalleryView: View {
             HStack(spacing: 6) {
                 Image(systemName: "pawprint.fill")
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(GalleryTheme.burgundy)
-                Text("SMART CURATION")
+                    .foregroundStyle(palette.primary)
+                Text(L.smartCuration)
                     .font(.caption.weight(.heavy))
                     .tracking(0.8)
-                    .foregroundStyle(GalleryTheme.burgundy)
+                    .foregroundStyle(palette.primary)
             }
-            Text("Gallery")
+            Text(L.galleryHeading)
                 .font(.system(size: 34, weight: .bold, design: .rounded))
                 .foregroundStyle(.primary)
-            Text("Your pet's best moments, curated by AI")
+            Text(L.gallerySubtitle)
                 .font(.subheadline)
-                .foregroundStyle(GalleryTheme.burgundy.opacity(0.55))
+                .foregroundStyle(palette.primary.opacity(0.55))
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -158,13 +157,13 @@ struct SessionGalleryView: View {
 
             Image(systemName: "photo.on.rectangle.angled")
                 .font(.system(size: 56))
-                .foregroundStyle(GalleryTheme.burgundy.opacity(0.35))
-            Text("暂无拍摄照片")
+                .foregroundStyle(palette.primary.opacity(0.35))
+            Text(L.galleryEmptyTitle)
                 .font(.headline)
-                .foregroundStyle(GalleryTheme.burgundy)
-            Text("拍几张宠物照后会显示在这里")
+                .foregroundStyle(palette.primary)
+            Text(L.galleryEmptySubtitle)
                 .font(.subheadline)
-                .foregroundStyle(GalleryTheme.burgundy.opacity(0.5))
+                .foregroundStyle(palette.primary.opacity(0.5))
 
             Spacer()
         }
@@ -410,9 +409,10 @@ struct PhotoGridCell: View {
     let isSelected: Bool
     let onTap: () -> Void
 
-    private let burgundy = Color(red: 0.365, green: 0.192, blue: 0.224)
+    @EnvironmentObject private var appSettings: AppSettingsStore
 
     var body: some View {
+        let accent = appSettings.palette.primary
         Button(action: onTap) {
             GeometryReader { geo in
                 let side = geo.size.width
@@ -428,7 +428,7 @@ struct PhotoGridCell: View {
                         ZStack {
                             if isSelected {
                                 Circle()
-                                    .fill(burgundy)
+                                    .fill(accent)
                                     .frame(width: 28, height: 28)
                                 Image(systemName: "checkmark")
                                     .font(.system(size: 13, weight: .heavy))

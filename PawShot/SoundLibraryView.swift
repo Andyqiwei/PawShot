@@ -1,15 +1,7 @@
 import SwiftUI
 
-private enum PawShotStudioTheme {
-    static let burgundy = Color(red: 0.365, green: 0.192, blue: 0.224)
-    static let cream = Color(red: 0.99, green: 0.96, blue: 0.96)
-    static let recordYellow = Color(red: 1.0, green: 0.86, blue: 0.15)
-    static let tealLink = Color(red: 0.15, green: 0.55, blue: 0.58)
-    static let cardGradientTop = Color(red: 0.32, green: 0.12, blue: 0.22)
-    static let cardGradientBottom = Color(red: 0.45, green: 0.22, blue: 0.28)
-}
-
 struct SoundLibraryView: View {
+    @EnvironmentObject private var appSettings: AppSettingsStore
     @ObservedObject var soundManager: SoundManager
     @Environment(\.dismiss) private var dismiss
 
@@ -20,10 +12,13 @@ struct SoundLibraryView: View {
     @State private var isAnimating = false
     @State private var editingItem: SoundItem?
 
+    private var L: L10n { appSettings.strings }
+    private var palette: ThemePalette { appSettings.palette }
+
     var body: some View {
         NavigationStack {
             ZStack {
-                PawShotStudioTheme.cream.ignoresSafeArea()
+                palette.cream.ignoresSafeArea()
 
                 ScrollViewReader { proxy in
                     List {
@@ -46,7 +41,7 @@ struct SoundLibraryView: View {
 
                         if soundManager.sounds.isEmpty {
                             Section {
-                                Text("暂无声音，请录制")
+                                Text(L.soundsEmpty)
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                                     .frame(maxWidth: .infinity)
@@ -74,17 +69,17 @@ struct SoundLibraryView: View {
             .toolbar {
                 if !embedInTab {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("完成") { dismiss() }
+                        Button(L.studioDone) { dismiss() }
                     }
                 }
             }
-            .alert("保存录音", isPresented: $showNameAlert) {
-                TextField("输入名字", text: $recordingName)
-                Button("保存") {
+            .alert(L.saveRecordingTitle, isPresented: $showNameAlert) {
+                TextField(L.namePlaceholder, text: $recordingName)
+                Button(L.save) {
                     soundManager.confirmSave(name: recordingName)
                     recordingName = ""
                 }
-                Button("丢弃", role: .cancel) {
+                Button(L.discard, role: .cancel) {
                     soundManager.discardLastRecording()
                 }
             }
@@ -100,14 +95,14 @@ struct SoundLibraryView: View {
                 .fill(
                     LinearGradient(
                         colors: [
-                            PawShotStudioTheme.cardGradientTop,
-                            PawShotStudioTheme.cardGradientBottom
+                            palette.cardGradientTop,
+                            palette.cardGradientBottom
                         ],
                         startPoint: .top,
                         endPoint: .bottom
                     )
                 )
-                .shadow(color: PawShotStudioTheme.burgundy.opacity(0.35), radius: 18, y: 10)
+                .shadow(color: palette.primary.opacity(0.35), radius: 18, y: 10)
 
             VStack(spacing: 18) {
                 Spacer(minLength: 8)
@@ -122,10 +117,10 @@ struct SoundLibraryView: View {
                 }
 
                 VStack(spacing: 6) {
-                    Text("Record Voice")
+                    Text(L.recordVoiceTitle)
                         .font(.system(size: 26, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
-                    Text("Capture a \"Good Boy!\" or a custom whistle")
+                    Text(L.recordVoiceSubtitle)
                         .font(.subheadline)
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.white.opacity(0.88))
@@ -143,7 +138,7 @@ struct SoundLibraryView: View {
                                     isAnimating = true
                                 }
                             }
-                        Text("Recording…")
+                        Text(L.recording)
                             .font(.headline)
                             .foregroundStyle(.white)
                         Spacer(minLength: 0)
@@ -152,7 +147,7 @@ struct SoundLibraryView: View {
                             isAnimating = false
                             showNameAlert = true
                         } label: {
-                            Text("Stop")
+                            Text(L.stop)
                                 .font(.headline.weight(.bold))
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 22)
@@ -166,12 +161,12 @@ struct SoundLibraryView: View {
                     Button {
                         soundManager.startRec()
                     } label: {
-                        Text("Record")
+                        Text(L.record)
                             .font(.system(size: 20, weight: .heavy, design: .rounded))
                             .foregroundStyle(.black)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
-                            .background(PawShotStudioTheme.recordYellow)
+                            .background(palette.recordYellow)
                             .clipShape(Capsule())
                             .shadow(color: .black.opacity(0.12), radius: 8, y: 4)
                     }
@@ -179,7 +174,7 @@ struct SoundLibraryView: View {
                     .padding(.bottom, 4)
 
                     if !soundManager.permissionGranted {
-                        Text("需要麦克风权限")
+                        Text(L.micPermissionNeeded)
                             .font(.caption)
                             .foregroundStyle(.orange.opacity(0.95))
                     }
@@ -194,14 +189,14 @@ struct SoundLibraryView: View {
 
     private func librarySectionHeader(scrollToTop: @escaping () -> Void) -> some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("Library")
+            Text(L.library)
                 .font(.system(size: 22, weight: .bold, design: .rounded))
-                .foregroundStyle(PawShotStudioTheme.burgundy)
+                .foregroundStyle(palette.primary)
             Spacer()
             Button(action: scrollToTop) {
-                Text("All Sounds")
+                Text(L.allSounds)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(PawShotStudioTheme.tealLink)
+                    .foregroundStyle(palette.tealAccent)
             }
             .buttonStyle(.plain)
         }
@@ -211,11 +206,11 @@ struct SoundLibraryView: View {
         HStack(spacing: 14) {
             ZStack {
                 Circle()
-                    .fill(PawShotStudioTheme.recordYellow.opacity(0.95))
+                    .fill(palette.recordYellow.opacity(0.95))
                     .frame(width: 48, height: 48)
                 Image(systemName: item.isSystem ? "toy.fill" : "waveform")
                     .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(PawShotStudioTheme.burgundy)
+                    .foregroundStyle(palette.primary)
             }
 
             Button {
@@ -225,21 +220,21 @@ struct SoundLibraryView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(item.name)
                             .font(.system(size: 17, weight: .bold, design: .rounded))
-                            .foregroundStyle(PawShotStudioTheme.burgundy)
+                            .foregroundStyle(palette.primary)
                             .multilineTextAlignment(.leading)
-                        Text(item.isSystem ? "系统内置" : "我的录音")
+                        Text(item.isSystem ? L.soundSystem : L.soundCustom)
                             .font(.caption)
-                            .foregroundStyle(PawShotStudioTheme.burgundy.opacity(0.55))
+                            .foregroundStyle(palette.primary.opacity(0.55))
                     }
                     Spacer(minLength: 8)
                     if !item.isSystem {
                         Image(systemName: "scissors")
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(PawShotStudioTheme.burgundy.opacity(0.4))
+                            .foregroundStyle(palette.primary.opacity(0.4))
                     } else {
                         Image(systemName: "lock.fill")
                             .font(.caption2)
-                            .foregroundStyle(PawShotStudioTheme.burgundy.opacity(0.25))
+                            .foregroundStyle(palette.primary.opacity(0.25))
                     }
                 }
                 .contentShape(Rectangle())
@@ -257,20 +252,20 @@ struct SoundLibraryView: View {
                     Image(systemName: item.isSelected ? "checkmark.circle.fill" : "circle")
                         .font(.system(size: 22, weight: .semibold))
                         .foregroundStyle(
-                            item.isSelected ? PawShotStudioTheme.burgundy : PawShotStudioTheme.burgundy.opacity(0.35)
+                            item.isSelected ? palette.primary : palette.primary.opacity(0.35)
                         )
                         .symbolRenderingMode(.hierarchical)
                 }
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(item.isSelected ? "已加入随机播放" : "未加入随机播放")
+            .accessibilityLabel(item.isSelected ? L.a11ySoundInRotation : L.a11ySoundNotInRotation)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(Color.white.opacity(0.92))
-                .shadow(color: PawShotStudioTheme.burgundy.opacity(0.08), radius: 10, y: 4)
+                .shadow(color: palette.primary.opacity(0.08), radius: 10, y: 4)
         )
     }
 }

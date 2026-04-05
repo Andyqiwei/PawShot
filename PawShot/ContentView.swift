@@ -5,48 +5,46 @@ enum PawShotMainTab: Hashable {
 }
 
 struct ContentView: View {
+    @EnvironmentObject private var appSettings: AppSettingsStore
     @StateObject private var cameraVM = CameraViewModel()
 
     @State private var selectedTab: PawShotMainTab = .live
-    @State private var showSessionGallery = false
+
+    private var L: L10n { appSettings.strings }
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            CameraTabView(showSessionGallery: $showSessionGallery)
+            CameraTabView(selectedTab: $selectedTab)
                 .tag(PawShotMainTab.live)
                 .tabItem {
-                    Label("Live", systemImage: "video.fill")
+                    Label(L.tabLive, systemImage: "video.fill")
                 }
 
             SessionGalleryView(cameraVM: cameraVM, onDismiss: nil, embedInTab: true)
                 .tag(PawShotMainTab.gallery)
                 .tabItem {
-                    Label("Gallery", systemImage: "photo.on.rectangle.angled")
+                    Label(L.tabGallery, systemImage: "photo.on.rectangle.angled")
                 }
 
             SoundLibraryView(soundManager: cameraVM.soundManager, embedInTab: true)
                 .tag(PawShotMainTab.studio)
                 .tabItem {
-                    Label("Studio", systemImage: "sparkles")
+                    Label(L.tabStudio, systemImage: "sparkles")
                 }
 
-            Text("Settings")
+            SettingsView()
                 .tag(PawShotMainTab.settings)
                 .tabItem {
-                    Label("Settings", systemImage: "gearshape.fill")
+                    Label(L.tabSettings, systemImage: "gearshape.fill")
                 }
         }
         .environmentObject(cameraVM)
         .onAppear(perform: refreshSessionForCurrentContext)
         .onChange(of: selectedTab) { _, _ in refreshSessionForCurrentContext() }
-        .onChange(of: showSessionGallery) { _, _ in refreshSessionForCurrentContext() }
-        .sheet(isPresented: $showSessionGallery) {
-            SessionGalleryView(cameraVM: cameraVM, onDismiss: { showSessionGallery = false }, embedInTab: false)
-        }
     }
 
     private func refreshSessionForCurrentContext() {
-        let shouldRun = selectedTab == .live && !showSessionGallery
+        let shouldRun = selectedTab == .live
         if shouldRun {
             cameraVM.startSession()
         } else {
@@ -56,8 +54,12 @@ struct ContentView: View {
 }
 
 struct CameraTabView: View {
+    @EnvironmentObject private var appSettings: AppSettingsStore
     @EnvironmentObject private var cameraVM: CameraViewModel
-    @Binding var showSessionGallery: Bool
+    @Binding var selectedTab: PawShotMainTab
+
+    private var L: L10n { appSettings.strings }
+    private var palette: ThemePalette { appSettings.palette }
 
     @State private var pinchStartZoom: CGFloat = 1.0
     @State private var isPinching = false
@@ -88,28 +90,28 @@ struct CameraTabView: View {
                                     }
                             )
 
-                        if cameraVM.isAIEnabled && cameraVM.isAIScanning {
-                            if let face = cameraVM.detectedFace {
-                                DogFeaturesHUD(face: face, screenSize: geo.size)
-                            } else {
-                                VStack {
-                                    Spacer()
-                                    HStack(spacing: 8) {
-                                        ProgressView()
-                                            .tint(.white)
-                                        Text("寻找狗狗正脸...")
-                                            .font(.subheadline)
-                                            .fontWeight(.medium)
-                                            .foregroundStyle(.white)
+                            if cameraVM.isAIEnabled && cameraVM.isAIScanning {
+                                if let face = cameraVM.detectedFace {
+                                    DogFeaturesHUD(face: face, screenSize: geo.size, lockedLabel: L.faceLocked)
+                                } else {
+                                    VStack {
+                                        Spacer()
+                                        HStack(spacing: 8) {
+                                            ProgressView()
+                                                .tint(.white)
+                                            Text(L.scanningForDog)
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                                .foregroundStyle(.white)
+                                        }
+                                        .padding(12)
+                                        .background(.ultraThinMaterial)
+                                        .clipShape(Capsule())
+                                        .padding(.bottom, 100)
                                     }
-                                    .padding(12)
-                                    .background(.ultraThinMaterial)
-                                    .clipShape(Capsule())
-                                    .padding(.bottom, 100)
+                                    .transition(.opacity)
                                 }
-                                .transition(.opacity)
                             }
-                        }
                     } else {
                         VStack(spacing: 20) {
                             Image(systemName: "camera.aperture")
@@ -120,7 +122,7 @@ struct CameraTabView: View {
                             ProgressView()
                                 .tint(.white)
 
-                            Text("唤醒相机与 AI 引擎...")
+                            Text(L.wakingCamera)
                                 .font(.subheadline)
                                 .fontWeight(.medium)
                                 .foregroundStyle(.gray)
@@ -170,7 +172,7 @@ struct CameraTabView: View {
                     HStack(spacing: 5) {
                         Image(systemName: "sparkles")
                             .font(.body.weight(.semibold))
-                        Text("AI AUTO")
+                        Text(L.aiAuto)
                             .font(.caption.weight(.heavy))
                             .lineLimit(1)
                             .fixedSize(horizontal: true, vertical: false)
@@ -197,11 +199,11 @@ struct CameraTabView: View {
                             .font(.body.weight(.semibold))
                             .frame(width: 22, height: 22)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Attraction")
+                            Text(L.attraction)
                                 .font(.caption.weight(.bold))
                                 .lineLimit(1)
                                 .fixedSize(horizontal: true, vertical: false)
-                            Text(attractionText)
+                            Text(attractionLabel)
                                 .font(.caption2.weight(.semibold))
                                 .foregroundStyle(.white.opacity(0.85))
                                 .lineLimit(1)
@@ -263,12 +265,12 @@ struct CameraTabView: View {
                         Circle()
                             .fill(.ultraThinMaterial)
                             .frame(width: 52, height: 52)
-                            .shadow(color: Color.pink.opacity(0.45), radius: 10, y: 0)
+                            .shadow(color: palette.cameraAccent.opacity(0.55), radius: 10, y: 0)
                         Image(systemName: "bolt.fill")
                             .font(.title2.weight(.bold))
                             .foregroundStyle(.white)
                     }
-                    Text("FLASH")
+                    Text(L.flash)
                         .font(.system(size: 10, weight: .heavy))
                         .foregroundStyle(.white)
                 }
@@ -282,7 +284,9 @@ struct CameraTabView: View {
     private var bottomFloatingControls: some View {
         HStack(spacing: 0) {
             Button {
-                showSessionGallery = true
+                let generator = UIImpactFeedbackGenerator(style: .light)
+                generator.impactOccurred()
+                selectedTab = .gallery
             } label: {
                 ZStack {
                     Circle()
@@ -328,7 +332,8 @@ struct CameraTabView: View {
             } label: {
                 ShutterButtonView(
                     isAIEnabled: cameraVM.isAIEnabled,
-                    isScanning: cameraVM.isAIScanning
+                    isScanning: cameraVM.isAIScanning,
+                    startLabel: L.shutterStart
                 )
             }
             .buttonStyle(.plain)
@@ -359,11 +364,11 @@ struct CameraTabView: View {
         }
     }
 
-    private var attractionText: String {
+    private var attractionLabel: String {
         switch cameraVM.attractionMode {
-        case .day: return "DAY"
-        case .night: return "NIGHT"
-        case .constant: return "ON"
+        case .day: return L.attractionDay
+        case .night: return L.attractionNight
+        case .constant: return L.attractionOn
         }
     }
 
@@ -383,6 +388,7 @@ struct CameraTabView: View {
 struct ShutterButtonView: View {
     let isAIEnabled: Bool
     let isScanning: Bool
+    var startLabel: String = "START"
 
     private let yellowFill = Color(red: 1, green: 0.86, blue: 0.15)
 
@@ -408,7 +414,7 @@ struct ShutterButtonView: View {
                         .fill(.white)
                         .frame(width: 22, height: 22)
                 } else {
-                    Text("START")
+                    Text(startLabel)
                         .font(.system(size: 11, weight: .black))
                         .foregroundStyle(.black)
                 }
@@ -424,6 +430,7 @@ struct ShutterButtonView: View {
 struct DogFeaturesHUD: View {
     let face: DogFaceFeatures
     let screenSize: CGSize
+    var lockedLabel: String = "LOCKED"
 
     var body: some View {
         let width = screenSize.width
@@ -457,7 +464,7 @@ struct DogFeaturesHUD: View {
             Circle().fill(color).frame(width: 15, height: 15).position(nose)
 
             if face.isLookingAtCamera {
-                Text("LOCKED")
+                Text(lockedLabel)
                     .font(.caption2)
                     .fontWeight(.black)
                     .padding(4)

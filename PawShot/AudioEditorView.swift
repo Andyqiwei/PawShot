@@ -1,23 +1,14 @@
 import SwiftUI
 import AVFoundation
 
-private enum AudioEditorTheme {
-    static let burgundy = Color(red: 0.365, green: 0.192, blue: 0.224)
-    static let cream = Color(red: 0.99, green: 0.96, blue: 0.96)
-    static let pinkPlate = Color(red: 1.0, green: 0.88, blue: 0.90)
-    static let barPink = Color(red: 0.98, green: 0.78, blue: 0.82)
-    static let tealLine = Color(red: 0.15, green: 0.55, blue: 0.58)
-    static let purpleHandle = Color(red: 0.28, green: 0.12, blue: 0.32)
-    static let recordYellow = Color(red: 1.0, green: 0.86, blue: 0.15)
-    static let boostOrange = Color(red: 1.0, green: 0.48, blue: 0.12)
-    static let saveGradientTop = Color(red: 0.42, green: 0.18, blue: 0.28)
-    static let saveGradientBottom = Color(red: 0.32, green: 0.12, blue: 0.22)
-}
-
 struct AudioEditorView: View {
+    @EnvironmentObject private var appSettings: AppSettingsStore
     let soundItem: SoundItem
     @ObservedObject var soundManager: SoundManager
     @Environment(\.dismiss) private var dismiss
+
+    private var L: L10n { appSettings.strings }
+    private var palette: ThemePalette { appSettings.palette }
 
     @State private var waveformSamples: [Float] = []
     @State private var duration: Double = 0
@@ -33,7 +24,7 @@ struct AudioEditorView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                AudioEditorTheme.cream.ignoresSafeArea()
+                palette.cream.ignoresSafeArea()
 
                 VStack(spacing: 0) {
                     profileHeader
@@ -56,13 +47,13 @@ struct AudioEditorView: View {
                             .padding(.bottom, 28)
                     } else {
                         Spacer()
-                        ProgressView("正在分析声纹...")
-                            .tint(AudioEditorTheme.burgundy)
+                        ProgressView(L.analyzingWaveform)
+                            .tint(palette.primary)
                         Spacer()
                     }
                 }
             }
-            .navigationTitle("Edit Sound")
+            .navigationTitle(L.editSound)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -72,10 +63,10 @@ struct AudioEditorView: View {
                         HStack(spacing: 4) {
                             Image(systemName: "chevron.left")
                                 .font(.subheadline.weight(.semibold))
-                            Text("Studio")
+                            Text(L.backToStudio)
                                 .font(.body.weight(.medium))
                         }
-                        .foregroundStyle(AudioEditorTheme.burgundy)
+                        .foregroundStyle(palette.primary)
                     }
                 }
             }
@@ -88,7 +79,7 @@ struct AudioEditorView: View {
         VStack(spacing: 10) {
             ZStack {
                 Circle()
-                    .fill(AudioEditorTheme.recordYellow)
+                    .fill(palette.recordYellow)
                     .frame(width: 72, height: 72)
                 Image(systemName: "waveform.and.mic")
                     .font(.system(size: 30, weight: .semibold))
@@ -96,17 +87,17 @@ struct AudioEditorView: View {
             }
             Text(soundItem.name)
                 .font(.system(size: 22, weight: .bold, design: .rounded))
-                .foregroundStyle(AudioEditorTheme.burgundy)
+                .foregroundStyle(palette.primary)
                 .multilineTextAlignment(.center)
 
             if duration > 0 {
-                Text("\(formatDurationClock(duration)) Duration • High Fidelity")
+                Text("\(formatDurationClock(duration)) \(L.durationHighFidelity)")
                     .font(.subheadline)
-                    .foregroundStyle(AudioEditorTheme.burgundy.opacity(0.5))
+                    .foregroundStyle(palette.primary.opacity(0.5))
             } else {
-                Text(soundItem.isSystem ? "系统声音" : "我的录音")
+                Text(soundItem.isSystem ? L.soundSystem : L.soundCustom)
                     .font(.subheadline)
-                    .foregroundStyle(AudioEditorTheme.burgundy.opacity(0.5))
+                    .foregroundStyle(palette.primary.opacity(0.5))
             }
         }
     }
@@ -122,11 +113,11 @@ struct AudioEditorView: View {
         VStack(spacing: 10) {
             ZStack(alignment: .leading) {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(AudioEditorTheme.pinkPlate)
+                    .fill(palette.waveformPlate)
                     .frame(height: 140)
 
                 ZStack(alignment: .leading) {
-                    BarWaveformView(samples: waveformSamples, burgundy: AudioEditorTheme.burgundy, altPink: AudioEditorTheme.barPink)
+                    BarWaveformView(samples: waveformSamples, burgundy: palette.primary, altPink: palette.waveformBarAlt)
                         .frame(height: 120)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)
@@ -137,7 +128,7 @@ struct AudioEditorView: View {
                         let endX = w * CGFloat(endTime / duration)
 
                         Rectangle()
-                            .fill(AudioEditorTheme.burgundy.opacity(0.12))
+                            .fill(palette.primary.opacity(0.12))
                             .frame(width: max(0, endX - startX), height: 120)
                             .offset(x: startX)
                             .padding(.vertical, 10)
@@ -146,13 +137,13 @@ struct AudioEditorView: View {
                     .allowsHitTesting(false)
 
                     Rectangle()
-                        .fill(AudioEditorTheme.tealLine.opacity(0.85))
+                        .fill(palette.tealAccent.opacity(0.85))
                         .frame(width: 2, height: 108)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                     GeometryReader { geo in
                         let width = geo.size.width
-                        TrimDragHandle()
+                        TrimDragHandle(handleColor: palette.purpleHandle)
                             .position(x: width * CGFloat(startTime / duration), y: 70)
                             .gesture(
                                 DragGesture()
@@ -162,7 +153,7 @@ struct AudioEditorView: View {
                                     }
                             )
 
-                        TrimDragHandle()
+                        TrimDragHandle(handleColor: palette.purpleHandle)
                             .position(x: width * CGFloat(endTime / duration), y: 70)
                             .gesture(
                                 DragGesture()
@@ -182,7 +173,7 @@ struct AudioEditorView: View {
                 Text(formatTime(endTime))
             }
             .font(.caption.weight(.medium))
-            .foregroundStyle(AudioEditorTheme.burgundy.opacity(0.55))
+            .foregroundStyle(palette.primary.opacity(0.55))
             .padding(.horizontal, 6)
         }
     }
@@ -192,38 +183,38 @@ struct AudioEditorView: View {
             HStack {
                 Image(systemName: volume > 1.0 ? "speaker.wave.3.fill" : "speaker.wave.2.fill")
                     .font(.title3)
-                    .foregroundStyle(AudioEditorTheme.burgundy)
-                Text("Volume Boost")
+                    .foregroundStyle(palette.primary)
+                Text(L.volumeBoost)
                     .font(.headline.weight(.semibold))
-                    .foregroundStyle(AudioEditorTheme.burgundy)
+                    .foregroundStyle(palette.primary)
                 Spacer()
                 Text("\(Int(volume * 100))%")
                     .font(.headline.weight(.bold))
-                    .foregroundStyle(volume > 1.0 ? AudioEditorTheme.boostOrange : AudioEditorTheme.burgundy)
+                    .foregroundStyle(volume > 1.0 ? palette.boostOrange : palette.primary)
                     .frame(minWidth: 52, alignment: .trailing)
             }
 
-            VolumeBoostSlider(volume: volumeBinding)
+            VolumeBoostSlider(volume: volumeBinding, palette: palette)
                 .frame(height: 52)
 
             if volume > 1.0 {
-                Text("音量增强 (最大 150%)")
+                Text(L.volumeBoostMax)
                     .font(.caption2)
-                    .foregroundStyle(AudioEditorTheme.boostOrange)
+                    .foregroundStyle(palette.boostOrange)
             } else if volume == 1.0 {
-                Text("标准音量")
+                Text(L.volumeStandard)
                     .font(.caption2)
-                    .foregroundStyle(AudioEditorTheme.burgundy.opacity(0.45))
+                    .foregroundStyle(palette.primary.opacity(0.45))
             } else {
-                Text("音量衰减")
+                Text(L.volumeReduced)
                     .font(.caption2)
-                    .foregroundStyle(AudioEditorTheme.burgundy.opacity(0.45))
+                    .foregroundStyle(palette.primary.opacity(0.45))
             }
         }
         .padding(18)
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(AudioEditorTheme.pinkPlate.opacity(0.92))
+                .fill(palette.waveformPlate.opacity(0.92))
         )
     }
 
@@ -253,16 +244,16 @@ struct AudioEditorView: View {
                 HStack(spacing: 10) {
                     Image(systemName: isPlaying ? "stop.fill" : "play.fill")
                         .font(.system(size: 18, weight: .bold))
-                    Text(isPlaying ? "Stop" : "Preview")
+                    Text(isPlaying ? L.stop : L.preview)
                         .font(.system(size: 17, weight: .bold, design: .rounded))
                 }
-                .foregroundStyle(AudioEditorTheme.burgundy)
+                .foregroundStyle(palette.primary)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 18)
                 .background(
                     Capsule()
                         .fill(Color.white.opacity(0.95))
-                        .shadow(color: AudioEditorTheme.burgundy.opacity(0.08), radius: 8, y: 3)
+                        .shadow(color: palette.primary.opacity(0.08), radius: 8, y: 3)
                 )
             }
             .buttonStyle(.plain)
@@ -275,7 +266,7 @@ struct AudioEditorView: View {
                     } else {
                         Image(systemName: "tray.and.arrow.down.fill")
                             .font(.system(size: 17, weight: .bold))
-                        Text("Save")
+                        Text(L.save)
                             .font(.system(size: 17, weight: .bold, design: .rounded))
                     }
                 }
@@ -286,12 +277,12 @@ struct AudioEditorView: View {
                     Capsule()
                         .fill(
                             LinearGradient(
-                                colors: [AudioEditorTheme.saveGradientTop, AudioEditorTheme.saveGradientBottom],
+                                colors: [palette.saveGradientTop, palette.saveGradientBottom],
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
                         )
-                        .shadow(color: AudioEditorTheme.burgundy.opacity(0.35), radius: 10, y: 4)
+                        .shadow(color: palette.primary.opacity(0.35), radius: 10, y: 4)
                 )
             }
             .buttonStyle(.plain)
@@ -421,7 +412,7 @@ struct AudioEditorView: View {
                         soundManager.replaceSoundFile(for: soundItem.id, newURL: newURL)
                     } else {
                         let newItem = SoundItem(
-                            name: "\(soundItem.name) (剪辑)",
+                            name: L.trimmedSoundName(soundItem.name),
                             filename: newURL.lastPathComponent,
                             isSystem: false,
                             isSelected: true,
@@ -475,10 +466,12 @@ private struct BarWaveformView: View {
 // MARK: - Trim handles
 
 private struct TrimDragHandle: View {
+    var handleColor: Color
+
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(AudioEditorTheme.purpleHandle)
+                .fill(handleColor)
                 .frame(width: 5, height: 120)
 
             VStack(spacing: 2) {
@@ -487,7 +480,7 @@ private struct TrimDragHandle: View {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .heavy))
             }
-            .foregroundStyle(AudioEditorTheme.purpleHandle)
+            .foregroundStyle(handleColor)
             .padding(6)
             .background(Circle().fill(Color.white).shadow(color: .black.opacity(0.15), radius: 3, y: 1))
         }
@@ -498,6 +491,7 @@ private struct TrimDragHandle: View {
 
 private struct VolumeBoostSlider: View {
     @Binding var volume: Float
+    var palette: ThemePalette
 
     private let trackHeight: CGFloat = 10
     private let thumbSize: CGFloat = 28
@@ -512,7 +506,7 @@ private struct VolumeBoostSlider: View {
 
             ZStack(alignment: .leading) {
                 Capsule()
-                    .fill(AudioEditorTheme.barPink.opacity(0.55))
+                    .fill(palette.sliderTrack.opacity(0.55))
                     .frame(width: w, height: trackHeight)
                     .position(x: w / 2, y: cy)
 
@@ -522,14 +516,14 @@ private struct VolumeBoostSlider: View {
                             let burgundyW = min(fillEnd, splitX)
                             if burgundyW > 0 {
                                 LinearGradient(
-                                    colors: [AudioEditorTheme.burgundy, AudioEditorTheme.barPink],
+                                    colors: [palette.primary, palette.waveformBarAlt],
                                     startPoint: .leading,
                                     endPoint: .trailing
                                 )
                                 .frame(width: burgundyW, height: trackHeight)
                             }
                             if fillEnd > splitX {
-                                AudioEditorTheme.boostOrange
+                                palette.boostOrange
                                     .frame(width: fillEnd - splitX, height: trackHeight)
                             }
                         }
@@ -547,7 +541,7 @@ private struct VolumeBoostSlider: View {
                     .frame(width: thumbSize, height: thumbSize)
                     .overlay(
                         Circle()
-                            .stroke(AudioEditorTheme.boostOrange, lineWidth: 3)
+                            .stroke(palette.boostOrange, lineWidth: 3)
                     )
                     .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
                     .position(x: thumbCenterX, y: cy)
@@ -572,7 +566,7 @@ private struct VolumeBoostSlider: View {
                     Text("150%")
                 }
                 .font(.caption2.weight(.medium))
-                .foregroundStyle(AudioEditorTheme.burgundy.opacity(0.45))
+                .foregroundStyle(palette.primary.opacity(0.45))
                 .padding(.horizontal, 2)
                 .padding(.top, 6)
             }
