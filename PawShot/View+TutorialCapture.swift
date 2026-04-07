@@ -1,8 +1,14 @@
 import SwiftUI
 
 extension View {
-    /// Tutorial / overlay anchor hook; replace with real geometry capture when needed.
     func captureRect(_ id: Int) -> some View {
-        self
+        background(
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: HighlightPreferenceKey.self,
+                    value: [id: HighlightAnchor(rect: proxy.frame(in: .global))]
+                )
+            }
+        )
     }
 }

@@ -2,6 +2,9 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject private var appSettings: AppSettingsStore
+    @Binding var selectedTab: PawShotMainTab
+    @Binding var showTutorial: Bool
+    @AppStorage("hasSeenTutorial") private var hasSeenTutorial = false
 
     private var L: L10n { appSettings.strings }
     private var palette: ThemePalette { appSettings.palette }
@@ -45,6 +48,20 @@ struct SettingsView: View {
                     }
 
                     Section {
+                        Button {
+                            hasSeenTutorial = false
+                            selectedTab = .live
+                            showTutorial = true
+                        } label: {
+                            settingsReplayRow
+                        }
+                        .buttonStyle(.plain)
+                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                    }
+
+                    Section {
                         Text(L.settingsFooter)
                             .font(.footnote)
                             .foregroundStyle(palette.primary.opacity(0.55))
@@ -63,6 +80,33 @@ struct SettingsView: View {
             .toolbarBackground(palette.cream, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
         }
+    }
+
+    private var settingsReplayRow: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(palette.cameraAccent.opacity(0.22))
+                    .frame(width: 48, height: 48)
+                Image(systemName: "arrow.counterclockwise.circle.fill")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(palette.cameraAccent)
+            }
+
+            Text(L.tutorialReplay)
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .foregroundStyle(palette.primary)
+                .multilineTextAlignment(.leading)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(Color.white.opacity(0.92))
+                .shadow(color: palette.primary.opacity(0.08), radius: 10, y: 4)
+        )
     }
 
     private func settingsRow(icon: String, iconTint: Color, title: String, value: String) -> some View {

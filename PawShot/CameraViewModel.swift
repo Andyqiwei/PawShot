@@ -528,8 +528,10 @@ class CameraViewModel: ObservableObject {
     
     @Published var isSessionRunning = false
     @Published var attractionMode: AttractionMode = .day
+    /// 仅在 `attractionMode == .constant` 时有效：短按闪光键在开关间切换，而非一直常亮。
+    @Published private(set) var isConstantTorchLit = false
     
-    @Published var isAIEnabled: Bool = false {
+    @Published var isAIEnabled: Bool = true {
         didSet {
             cameraService.isAIEnabled = isAIEnabled
             if !isAIEnabled { isAIScanning = false }
@@ -553,8 +555,12 @@ class CameraViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     
     init() {
+        cameraService.isAIEnabled = isAIEnabled
         cameraService.onSessionRunningChanged = { [weak self] isRunning in
-            Task { @MainActor in self?.isSessionRunning = isRunning }
+            Task { @MainActor in
+                self?.isSessionRunning = isRunning
+                if !isRunning { self?.isConstantTorchLit = false }
+            }
         }
         cameraService.onPhotoCaptured = { [weak self] image in
             let thumb = Self.thumbnail(from: image, maxSize: 120)
@@ -605,19 +611,20 @@ class CameraViewModel: ObservableObject {
     func triggerManualSound() { playAttractionSound() }
     
     func triggerManualFlash() {
-        cameraService.triggerAttractionLight(mode: attractionMode)
+        if attractionMode == .constant {
+            isConstantTorchLit.toggle()
+            cameraService.setConstantLight(isConstantTorchLit)
+        } else {
+            cameraService.triggerAttractionLight(mode: attractionMode)
+        }
     }
     
-    func cycleAttractionMode() {
-        switch attractionMode {
-        case .day: attractionMode = .night
-        case .night: attractionMode = .constant
-        case .constant: attractionMode = .day
-        }
-        if attractionMode == .constant {
-            cameraService.setConstantLight(true)
-        } else {
-            cameraService.setConstantLight(false)
+    func setAttractionMode(_ mode: AttractionMode, trigger: Bool) {
+        attractionMode = mode
+        isConstantTorchLit = false
+        cameraService.setConstantLight(false)
+        if trigger, mode != .constant {
+            cameraService.triggerAttractionLight(mode: mode)
         }
     }
     

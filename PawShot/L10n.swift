@@ -38,13 +38,48 @@ struct L10n {
     var scanningForDog: String { t(en: "Looking for a dog’s face…", zh: "寻找狗狗正脸…", es: "Buscando el rostro del perro…") }
     var wakingCamera: String { t(en: "Starting camera and AI…", zh: "唤醒相机与 AI 引擎…", es: "Iniciando cámara e IA…") }
     var aiAuto: String { "AI AUTO" }
-    var attraction: String { t(en: "Attraction", zh: "吸引", es: "Atracción") }
     var attractionDay: String { t(en: "DAY", zh: "日间", es: "DÍA") }
     var attractionNight: String { t(en: "NIGHT", zh: "夜间", es: "NOCHE") }
     var attractionOn: String { t(en: "ON", zh: "常亮", es: "ON") }
     var flash: String { t(en: "FLASH", zh: "闪光", es: "FLASH") }
     var shutterStart: String { t(en: "START", zh: "开始", es: "INICIO") }
     var faceLocked: String { t(en: "LOCKED", zh: "已锁定", es: "FIJADO") }
+
+    // MARK: - Tutorial (live camera)
+
+    var tutorialStep0Title: String {
+        t(en: "Top bar: AI AUTO", zh: "顶部栏：AI AUTO", es: "Barra superior: AI AUTO")
+    }
+    var tutorialStep0Body: String {
+        t(
+            en: "AI mode is on by default. Watch the shutter: the multicolor breathing glow means AI is capturing intelligently; when it turns white, you’re in manual shooting.",
+            zh: "AI 模式已默认开启。观察快门键，多彩呼吸灯意味着 AI 正在智能捕捉；变为白色则代表手动拍摄。",
+            es: "El modo IA está activado por defecto. Mira el disparador: el resplandor multicolor indica que la IA captura de forma inteligente; en blanco, disparo manual."
+        )
+    }
+    var tutorialStep1Title: String {
+        t(en: "Right side: zoom & lure light", zh: "右侧：变焦与诱导光", es: "Lateral: zoom y luz de llamada")
+    }
+    var tutorialStep1Body: String {
+        t(
+            en: "Drag the zoom slider to frame your pet. Hold the flash button briefly (about half a second) to open three options (top to bottom: day, night, torch on/off mode), then tap the one you want. A quick tap still fires an instant flash—or toggles the torch when ON mode is selected.",
+            zh: "拖动变焦滑块构图。长按闪光键约半秒会弹出三档（上中下：日间、夜间、常亮），再点选其一即可。短按在日间/夜间仍是即时闪光；选常亮后短按为手电开/关。",
+            es: "Arrastra el zoom para encuadrar. Mantén el flash un instante (medio segundo aprox.) para ver tres opciones (arriba a abajo: día, noche, linterna manual) y pulsa la que quieras. Un toque breve sigue disparando un destello; en modo ON alterna la linterna."
+        )
+    }
+    var tutorialStep2Title: String {
+        t(en: "Bottom: shutter, gallery & sound", zh: "底部：快门、相册与声音", es: "Inferior: disparador, galería y sonido")
+    }
+    var tutorialStep2Body: String {
+        t(
+            en: "When the shutter glows with color, tap Start and let AI find the perfect moment for your dog.",
+            zh: "当快门键闪烁彩色光芒时，点击开始，让 AI 替你寻找狗狗最完美的瞬间。",
+            es: "Cuando el disparador brilla en color, pulsa Inicio y deja que la IA encuentre el momento perfecto con tu perro."
+        )
+    }
+    var tutorialNext: String { t(en: "Next", zh: "下一步", es: "Siguiente") }
+    var tutorialDone: String { t(en: "Done", zh: "完成", es: "Listo") }
+    var tutorialReplay: String { t(en: "Replay Tutorial", zh: "重新观看教程", es: "Volver a ver el tutorial") }
 
     // MARK: - Gallery
 
