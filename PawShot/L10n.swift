@@ -37,7 +37,8 @@ struct L10n {
 
     var scanningForDog: String { t(en: "Looking for a dog’s face…", zh: "寻找狗狗正脸…", es: "Buscando el rostro del perro…") }
     var wakingCamera: String { t(en: "Starting camera and AI…", zh: "唤醒相机与 AI 引擎…", es: "Iniciando cámara e IA…") }
-    var aiAuto: String { "AI AUTO" }
+    var aiOn: String { t(en: "AI ON", zh: "AI 开", es: "IA ON") }
+    var aiOff: String { t(en: "AI OFF", zh: "AI 关", es: "IA OFF") }
     var attractionDay: String { t(en: "DAY", zh: "日间", es: "DÍA") }
     var attractionNight: String { t(en: "NIGHT", zh: "夜间", es: "NOCHE") }
     var attractionOn: String { t(en: "ON", zh: "常亮", es: "ON") }
@@ -48,7 +49,7 @@ struct L10n {
     // MARK: - Tutorial (live camera)
 
     var tutorialStep0Title: String {
-        t(en: "Top bar: AI AUTO", zh: "顶部栏：AI AUTO", es: "Barra superior: AI AUTO")
+        t(en: "Top bar: AI ON / OFF", zh: "顶部栏：AI 开 / 关", es: "Barra superior: IA ON / OFF")
     }
     var tutorialStep0Body: String {
         t(

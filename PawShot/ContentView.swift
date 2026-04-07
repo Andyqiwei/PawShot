@@ -160,12 +160,12 @@ struct CameraTabView: View {
 
                 Spacer()
 
-                HStack(alignment: .bottom) {
-                    Spacer()
+                ZStack(alignment: .bottomTrailing) {
+                    Color.clear
                     rightRail
                         .captureRect(1)
                 }
-                .frame(maxHeight: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 bottomFloatingControls
                     .captureRect(2)
@@ -174,49 +174,63 @@ struct CameraTabView: View {
     }
 
     private var topBar: some View {
-        HStack(alignment: .center, spacing: 12) {
+        ZStack(alignment: .center) {
             Text("PawShot")
                 .font(.system(size: 26, weight: .bold, design: .default))
                 .italic()
                 .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-            Spacer(minLength: 8)
-
-            Button {
-                let generator = UIImpactFeedbackGenerator(style: .medium)
-                generator.impactOccurred()
-                if cameraVM.isAIEnabled {
-                    cameraVM.isAIEnabled = false
-                } else {
-                    cameraVM.isAIEnabled = true
-                }
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: cameraVM.isAIEnabled ? "sparkles" : "sparkles.slash")
-                        .font(.body.weight(.semibold))
-                    Text(L.aiAuto)
-                        .font(.caption.weight(.heavy))
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
-                }
-                .foregroundStyle(cameraVM.isAIEnabled ? .white : .white.opacity(0.72))
-                .padding(.vertical, 8)
-                .padding(.horizontal, 12)
-                .background(
-                    cameraVM.isAIEnabled
-                        ? Color.cyan.opacity(0.88)
-                        : Color.white.opacity(0.12)
-                )
-                .clipShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .fixedSize(horizontal: true, vertical: false)
-            .padding(5)
-            .background(.ultraThinMaterial)
-            .clipShape(Capsule())
+            aiToggleButton
+                .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .padding(.top, 12)
         .padding(.horizontal, 16)
+    }
+
+    private var aiToggleButton: some View {
+        Button {
+            let generator = UIImpactFeedbackGenerator(style: .medium)
+            generator.impactOccurred()
+            if cameraVM.isAIEnabled {
+                cameraVM.isAIEnabled = false
+            } else {
+                cameraVM.isAIEnabled = true
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: cameraVM.isAIEnabled ? "sparkles" : "sparkles.slash")
+                    .font(.body.weight(.semibold))
+                    .frame(width: 22, height: 22, alignment: .center)
+                ZStack {
+                    Text(L.aiOn)
+                        .font(.caption.weight(.heavy))
+                        .lineLimit(1)
+                        .opacity(cameraVM.isAIEnabled ? 1 : 0)
+                        .accessibilityHidden(!cameraVM.isAIEnabled)
+                    Text(L.aiOff)
+                        .font(.caption.weight(.heavy))
+                        .lineLimit(1)
+                        .opacity(cameraVM.isAIEnabled ? 0 : 1)
+                        .accessibilityHidden(cameraVM.isAIEnabled)
+                }
+                .frame(width: 54, alignment: .center)
+            }
+            .foregroundStyle(cameraVM.isAIEnabled ? .white : .white.opacity(0.72))
+            .padding(.vertical, 8)
+            .padding(.horizontal, 12)
+            .background(
+                cameraVM.isAIEnabled
+                    ? Color.cyan.opacity(0.88)
+                    : Color.white.opacity(0.12)
+            )
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .fixedSize(horizontal: true, vertical: false)
+        .padding(5)
+        .background(.ultraThinMaterial)
+        .clipShape(Capsule())
     }
 
     private var rightRail: some View {
@@ -255,6 +269,8 @@ struct CameraTabView: View {
         .padding(.bottom, 12)
     }
 
+    private let bottomBarControlHeight: CGFloat = 94
+
     private var bottomFloatingControls: some View {
         HStack(spacing: 0) {
             Button {
@@ -278,10 +294,9 @@ struct CameraTabView: View {
                             .foregroundStyle(.white.opacity(0.9))
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: bottomBarControlHeight, alignment: .center)
             }
             .buttonStyle(.plain)
-
-            Spacer()
 
             Button {
                 let generator = UIImpactFeedbackGenerator(style: .medium)
@@ -294,10 +309,9 @@ struct CameraTabView: View {
                     .frame(width: 52, height: 52)
                     .background(.ultraThinMaterial)
                     .clipShape(Circle())
+                    .frame(maxWidth: .infinity, maxHeight: bottomBarControlHeight, alignment: .center)
             }
             .buttonStyle(.plain)
-
-            Spacer()
 
             Button {
                 let generator = UIImpactFeedbackGenerator(style: .medium)
@@ -309,10 +323,11 @@ struct CameraTabView: View {
                     isScanning: cameraVM.isAIScanning,
                     startLabel: L.shutterStart
                 )
+                .frame(width: 94, height: 94)
+                .frame(maxWidth: .infinity, maxHeight: bottomBarControlHeight, alignment: .center)
+                .clipped()
             }
             .buttonStyle(.plain)
-
-            Spacer()
 
             Button {
                 cameraVM.switchCamera()
@@ -323,9 +338,11 @@ struct CameraTabView: View {
                     .frame(width: 52, height: 52)
                     .background(.ultraThinMaterial)
                     .clipShape(Circle())
+                    .frame(maxWidth: .infinity, maxHeight: bottomBarControlHeight, alignment: .center)
             }
             .buttonStyle(.plain)
         }
+        .frame(height: bottomBarControlHeight)
         .padding(.horizontal, 20)
         .padding(.bottom, 12)
     }
@@ -516,125 +533,89 @@ struct ShutterButtonView: View {
     let isScanning: Bool
     var startLabel: String = "START"
 
-    @State private var haloBreath = false
+    private let aiGradient = AngularGradient(
+        colors: [.cyan, .blue, .purple, .pink, .orange, .yellow, .cyan],
+        center: .center
+    )
 
-    private var intelligenceSpectrum: [Color] {
-        [
-            Color(red: 0.45, green: 0.28, blue: 0.98),
-            Color(red: 0.22, green: 0.48, blue: 1.0),
-            Color(red: 0.18, green: 0.78, blue: 0.98),
-            Color(red: 0.28, green: 0.92, blue: 0.58),
-            Color(red: 0.98, green: 0.82, blue: 0.22),
-            Color(red: 0.98, green: 0.32, blue: 0.52),
-            Color(red: 0.62, green: 0.38, blue: 0.98),
-            Color(red: 0.45, green: 0.28, blue: 0.98),
-        ]
-    }
+    @State private var rotation: Double = 0
+    @State private var pulse: CGFloat = 1.0
+
+    private let outerSize: CGFloat = 92
+    private let classicRingLine: CGFloat = 2.5
+    private let aiIdleRingLine: CGFloat = 5
+    private let aiScanningRingLine: CGFloat = 7
 
     var body: some View {
         Group {
-            if isAIEnabled {
-                aiShutter
+            if !isAIEnabled {
+                classicShutter
+            } else if !isScanning {
+                aiIdleShutter
             } else {
-                manualShutter
+                aiScanningShutter
             }
         }
+        .frame(width: 94, height: 94, alignment: .center)
     }
 
-    private var aiShutter: some View {
-        ZStack {
+    /// A. Classic iOS-style shutter: white fill + white stroked outer ring.
+    private var classicShutter: some View {
+        let inner = outerSize - classicRingLine * 2 - 10
+        return ZStack {
             Circle()
-                .stroke(Color.white.opacity(0.2), lineWidth: 5)
-                .frame(width: 92, height: 92)
-                .scaleEffect(haloBreath ? 1.06 : 0.97)
-                .opacity(haloBreath ? 0.55 : 0.2)
-
-            TimelineView(.animation(minimumInterval: 1.0 / 45.0)) { context in
-                let t = context.date.timeIntervalSinceReferenceDate
-                let spin = (t.truncatingRemainder(dividingBy: 4.8)) / 4.8 * 360.0
-                let breath = 1.0 + 0.05 * sin(t * (2 * .pi / 2.15))
-                let cx = 0.5 + 0.42 * cos(t * 1.05)
-                let cy = 0.5 + 0.42 * sin(t * 1.05)
-
-                ZStack {
-                    Circle()
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: intelligenceSpectrum,
-                                startPoint: UnitPoint(x: cx, y: cy),
-                                endPoint: UnitPoint(x: 1 - cx, y: 1 - cy)
-                            ),
-                            lineWidth: 4
-                        )
-                        .frame(width: 88, height: 88)
-                        .blur(radius: 1.8)
-                        .opacity(0.72)
-                        .rotationEffect(.degrees(spin))
-                        .scaleEffect(breath)
-
-                    Circle()
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: intelligenceSpectrum,
-                                startPoint: UnitPoint(x: 1 - cx, y: cy),
-                                endPoint: UnitPoint(x: cx, y: 1 - cy)
-                            ),
-                            lineWidth: 2.8
-                        )
-                        .frame(width: 84, height: 84)
-                        .rotationEffect(.degrees(spin))
-                        .scaleEffect(breath)
-                }
-            }
-
-            Circle()
-                .fill(Color.black.opacity(0.92))
-                .frame(width: 68, height: 68)
-
-            aiCenterContent
-        }
-        .frame(width: 94, height: 94)
-        .onAppear {
-            haloBreath = false
-            withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
-                haloBreath = true
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var aiCenterContent: some View {
-        if isScanning {
-            ZStack {
-                RoundedRectangle(cornerRadius: 5)
-                    .fill(Color.white.opacity(0.12))
-                    .frame(width: 26, height: 26)
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(.white)
-                    .frame(width: 22, height: 22)
-            }
-        } else {
-            Text(startLabel)
-                .font(.system(size: 11, weight: .black))
-                .foregroundStyle(.white)
-        }
-    }
-
-    private var manualShutter: some View {
-        ZStack {
-            Circle()
-                .strokeBorder(Color.white.opacity(0.92), lineWidth: 2)
-                .frame(width: 86, height: 86)
-            Circle()
-                .strokeBorder(Color.gray.opacity(0.45), lineWidth: 1)
-                .frame(width: 78, height: 78)
+                .strokeBorder(Color.white, lineWidth: classicRingLine)
+                .frame(width: outerSize, height: outerSize)
             Circle()
                 .fill(Color.white)
-                .frame(width: 68, height: 68)
+                .frame(width: inner, height: inner)
+        }
+    }
 
-            Image(systemName: "camera.aperture")
-                .font(.system(size: 28, weight: .semibold))
-                .foregroundStyle(Color.black.opacity(0.5))
+    /// B. AI on, idle: saturated angular gradient ring, white center, black label — no animation.
+    private var aiIdleShutter: some View {
+        let inner = outerSize - aiIdleRingLine * 2 - 8
+        return ZStack {
+            Circle()
+                .strokeBorder(aiGradient, lineWidth: aiIdleRingLine)
+                .frame(width: outerSize, height: outerSize)
+            Circle()
+                .fill(Color.white)
+                .frame(width: inner, height: inner)
+            Text(startLabel)
+                .font(.system(size: 11, weight: .black))
+                .foregroundStyle(.black)
+        }
+    }
+
+    /// C. AI scanning: thicker animated gradient ring + stop (rounded square) center.
+    private var aiScanningShutter: some View {
+        ZStack {
+            Circle()
+                .strokeBorder(aiGradient, lineWidth: aiScanningRingLine)
+                .frame(width: outerSize, height: outerSize)
+                .rotationEffect(.degrees(rotation))
+                .scaleEffect(pulse)
+                .shadow(color: .cyan.opacity(0.45), radius: 8, y: 0)
+                .shadow(color: .purple.opacity(0.35), radius: 10, y: 0)
+                .onAppear {
+                    rotation = 0
+                    pulse = 1.0
+                    withAnimation(.linear(duration: 2).repeatForever(autoreverses: false)) {
+                        rotation = 360
+                    }
+                    withAnimation(.easeInOut(duration: 1).repeatForever(autoreverses: true)) {
+                        pulse = 1.05
+                    }
+                }
+                .onDisappear {
+                    rotation = 0
+                    pulse = 1.0
+                }
+
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.white)
+                .frame(width: 26, height: 26)
         }
     }
 }
