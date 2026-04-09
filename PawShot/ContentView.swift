@@ -109,27 +109,9 @@ struct CameraTabView: View {
                                     }
                             )
 
-                            if cameraVM.isAIEnabled && cameraVM.isAIScanning {
-                                if let face = cameraVM.detectedFace {
-                                    DogFeaturesHUD(face: face, screenSize: geo.size, lockedLabel: L.faceLocked)
-                                } else {
-                                    VStack {
-                                        Spacer()
-                                        HStack(spacing: 8) {
-                                            ProgressView()
-                                                .tint(.white)
-                                            Text(L.scanningForDog)
-                                                .font(.subheadline)
-                                                .fontWeight(.medium)
-                                                .foregroundStyle(.white)
-                                        }
-                                        .padding(12)
-                                        .background(.ultraThinMaterial)
-                                        .clipShape(Capsule())
-                                        .padding(.bottom, 100)
-                                    }
-                                    .transition(.opacity)
-                                }
+                            if cameraVM.isAIEnabled && cameraVM.isAIScanning,
+                               let face = cameraVM.detectedFace {
+                                DogFeaturesHUD(face: face, screenSize: geo.size, lockedLabel: L.faceLocked)
                             }
                     } else {
                         VStack(spacing: 20) {
@@ -181,8 +163,20 @@ struct CameraTabView: View {
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            aiToggleButton
-                .frame(maxWidth: .infinity, alignment: .trailing)
+            VStack(alignment: .trailing, spacing: 6) {
+                aiToggleButton
+                if cameraVM.isAIEnabled && cameraVM.isAIScanning {
+                    AIStatusIndicatorView(
+                        isLocked: cameraVM.detectedFace != nil,
+                        scanningText: L.aiIndicatorScanning,
+                        lockedText: L.aiIndicatorLocked
+                    )
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .animation(.easeInOut(duration: 0.25), value: cameraVM.isAIScanning)
+            .animation(.easeInOut(duration: 0.25), value: cameraVM.detectedFace != nil)
         }
         .padding(.top, 12)
         .padding(.horizontal, 16)
@@ -206,15 +200,16 @@ struct CameraTabView: View {
                     Text(L.aiOn)
                         .font(.caption.weight(.heavy))
                         .lineLimit(1)
+                        .frame(width: 54, alignment: .center)
                         .opacity(cameraVM.isAIEnabled ? 1 : 0)
                         .accessibilityHidden(!cameraVM.isAIEnabled)
                     Text(L.aiOff)
                         .font(.caption.weight(.heavy))
                         .lineLimit(1)
+                        .frame(width: 54, alignment: .center)
                         .opacity(cameraVM.isAIEnabled ? 0 : 1)
                         .accessibilityHidden(cameraVM.isAIEnabled)
                 }
-                .frame(width: 54, alignment: .center)
             }
             .foregroundStyle(cameraVM.isAIEnabled ? .white : .white.opacity(0.72))
             .padding(.vertical, 8)
@@ -269,7 +264,8 @@ struct CameraTabView: View {
         .padding(.bottom, 12)
     }
 
-    private let bottomBarControlHeight: CGFloat = 94
+    /// Room for shutter (94) plus the emergency control sitting above the ring (~114); keeps layout from clipping.
+    private let bottomBarControlHeight: CGFloat = 118
 
     private var bottomFloatingControls: some View {
         HStack(spacing: 0) {
@@ -313,21 +309,35 @@ struct CameraTabView: View {
             }
             .buttonStyle(.plain)
 
-            Button {
-                let generator = UIImpactFeedbackGenerator(style: .medium)
-                generator.impactOccurred()
-                cameraVM.handleShutterPress()
-            } label: {
-                ShutterButtonView(
-                    isAIEnabled: cameraVM.isAIEnabled,
-                    isScanning: cameraVM.isAIScanning,
-                    startLabel: L.shutterStart
-                )
-                .frame(width: 94, height: 94)
-                .frame(maxWidth: .infinity, maxHeight: bottomBarControlHeight, alignment: .center)
-                .clipped()
+            ZStack {
+                Button {
+                    let generator = UIImpactFeedbackGenerator(style: .medium)
+                    generator.impactOccurred()
+                    cameraVM.handleShutterPress()
+                } label: {
+                    ShutterButtonView(
+                        isAIEnabled: cameraVM.isAIEnabled,
+                        isScanning: cameraVM.isAIScanning,
+                        startLabel: L.shutterStart
+                    )
+                    .frame(width: 94, height: 94)
+                }
+                .buttonStyle(.plain)
+
+                if cameraVM.isAIEnabled {
+                    Button {
+                        cameraVM.forceCapture()
+                    } label: {
+                        EmergencyCaptureButtonLabel()
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(L.a11yEmergencyCapture)
+                    // ~2 o’clock on the shutter ring; container sized so the 40pt circle is not clipped
+                    .offset(x: 28, y: -34)
+                }
             }
-            .buttonStyle(.plain)
+            .frame(width: 120, height: 114)
+            .frame(maxWidth: .infinity, maxHeight: bottomBarControlHeight, alignment: .center)
 
             Button {
                 cameraVM.switchCamera()
@@ -357,6 +367,100 @@ struct CameraTabView: View {
         let z = cameraVM.zoomFactor
         if z < 1.1 { return "1.0x" }
         return String(format: "%.1fx", z)
+    }
+}
+
+// MARK: - AI status pill (top bar)
+
+private struct AIStatusIndicatorView: View {
+    let isLocked: Bool
+    let scanningText: String
+    let lockedText: String
+
+    var body: some View {
+        Text(isLocked ? lockedText : scanningText)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 5)
+            .background {
+                ZStack {
+                    if isLocked {
+                        Capsule().fill(Color.green.opacity(0.82))
+                    } else {
+                        Capsule()
+                            .fill(Color.white.opacity(0.12))
+                        Capsule()
+                            .fill(.ultraThinMaterial)
+                            .opacity(0.45)
+                        scanningShimmer
+                    }
+                }
+            }
+            .overlay(
+                Capsule()
+                    .strokeBorder(Color.white.opacity(isLocked ? 0.3 : 0.22), lineWidth: 0.5)
+            )
+            .clipShape(Capsule())
+    }
+
+    private var scanningShimmer: some View {
+        TimelineView(.animation(minimumInterval: 1 / 30)) { context in
+            GeometryReader { geo in
+                let w = geo.size.width
+                let t = context.date.timeIntervalSince1970
+                let period = 2.5
+                let p = CGFloat((t.truncatingRemainder(dividingBy: period)) / period)
+                let sweep = -28 + p * (w + 56)
+
+                LinearGradient(
+                    colors: [
+                        .white.opacity(0),
+                        .white.opacity(0.4),
+                        .white.opacity(0)
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .frame(width: 36, height: geo.size.height)
+                .offset(x: sweep)
+                .blendMode(.plusLighter)
+            }
+            .clipShape(Capsule())
+        }
+    }
+}
+
+/// Visual sibling to `ShutterButtonView`’s AI ring — same angular spectrum, dark glass center (not a grey material chip).
+private struct EmergencyCaptureButtonLabel: View {
+    private static let ringGradient = AngularGradient(
+        colors: [.cyan, .blue, .purple, .pink, .orange, .yellow, .cyan],
+        center: .center
+    )
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [
+                            Color.white.opacity(0.2),
+                            Color.black.opacity(0.55)
+                        ],
+                        center: .center,
+                        startRadius: 1,
+                        endRadius: 22
+                    )
+                )
+            Circle()
+                .strokeBorder(Self.ringGradient, lineWidth: 2.25)
+            Image(systemName: "camera")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.white)
+        }
+        .frame(width: 40, height: 40)
+        .shadow(color: .cyan.opacity(0.4), radius: 6, x: 0, y: 0)
+        .shadow(color: .purple.opacity(0.3), radius: 9, x: 0, y: 1)
     }
 }
 

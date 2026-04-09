@@ -35,7 +35,6 @@ struct L10n {
 
     // MARK: - Camera
 
-    var scanningForDog: String { t(en: "Looking for a dog’s face…", zh: "寻找狗狗正脸…", es: "Buscando el rostro del perro…") }
     var wakingCamera: String { t(en: "Starting camera and AI…", zh: "唤醒相机与 AI 引擎…", es: "Iniciando cámara e IA…") }
     var aiOn: String { t(en: "AI ON", zh: "AI 开", es: "IA ON") }
     var aiOff: String { t(en: "AI OFF", zh: "AI 关", es: "IA OFF") }
@@ -45,6 +44,11 @@ struct L10n {
     var flash: String { t(en: "FLASH", zh: "闪光", es: "FLASH") }
     var shutterStart: String { t(en: "START", zh: "开始", es: "INICIO") }
     var faceLocked: String { t(en: "LOCKED", zh: "已锁定", es: "FIJADO") }
+    var aiIndicatorScanning: String { t(en: "Scanning…", zh: "扫描中…", es: "Escaneando…") }
+    var aiIndicatorLocked: String { t(en: "Locked", zh: "已锁定", es: "Fijado") }
+    var a11yEmergencyCapture: String {
+        t(en: "Emergency capture", zh: "应急快门", es: "Captura de emergencia")
+    }
 
     // MARK: - Tutorial (live camera)
 
@@ -53,9 +57,9 @@ struct L10n {
     }
     var tutorialStep0Body: String {
         t(
-            en: "AI mode is on by default. Watch the shutter: the multicolor breathing glow means AI is capturing intelligently; when it turns white, you’re in manual shooting.",
-            zh: "AI 模式已默认开启。观察快门键，多彩呼吸灯意味着 AI 正在智能捕捉；变为白色则代表手动拍摄。",
-            es: "El modo IA está activado por defecto. Mira el disparador: el resplandor multicolor indica que la IA captura de forma inteligente; en blanco, disparo manual."
+            en: "AI is on by default. The colorful glow on the shutter means AI is looking for your dog’s perfect moment.",
+            zh: "AI 已默认开启，快门键的流光溢彩代表 AI 正在寻找狗狗最完美的瞬间。",
+            es: "La IA está activada por defecto. El resplandor de colores en el disparador indica que la IA busca el momento perfecto de tu perro."
         )
     }
     var tutorialStep1Title: String {
@@ -73,9 +77,9 @@ struct L10n {
     }
     var tutorialStep2Body: String {
         t(
-            en: "When the shutter glows with color, tap Start and let AI find the perfect moment for your dog.",
-            zh: "当快门键闪烁彩色光芒时，点击开始，让 AI 替你寻找狗狗最完美的瞬间。",
-            es: "Cuando el disparador brilla en color, pulsa Inicio y deja que la IA encuentre el momento perfecto con tu perro."
+            en: "While AI is working, tap the emergency shutter on the right anytime to capture a moment you love.",
+            zh: "AI 工作期间，你可以随时点击右侧的应急快门，手动捕捉你心动的瞬间。",
+            es: "Mientras la IA trabaja, pulsa en cualquier momento el disparador de emergencia a la derecha para capturar un momento que te encante."
         )
     }
     var tutorialNext: String { t(en: "Next", zh: "下一步", es: "Siguiente") }
