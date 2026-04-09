@@ -520,6 +520,8 @@ private struct FlashAttractionShifterView: View {
     private let tapMaxDistance: CGFloat = 24
     /// 面板向左偏移，布局宽度仍只占闪光键一列，变焦条不挤动
     private let stripOutsetX: CGFloat = 176
+    /// 向上抬起，避免毛玻璃菜单与底部快门重叠（横竖屏共用）
+    private let stripVerticalLift: CGFloat = 60
 
     @State private var showStrip = false
     @State private var pressBegan: Date?
@@ -538,7 +540,7 @@ private struct FlashAttractionShifterView: View {
                             insertion: .opacity.combined(with: .scale(scale: 0.92, anchor: UnitPoint(x: 1, y: 0.5))),
                             removal: .opacity
                         ))
-                        .offset(x: -(stripOutsetX))
+                        .offset(x: -(stripOutsetX), y: -stripVerticalLift)
                 }
             }
             .animation(.spring(response: 0.32, dampingFraction: 0.82), value: showStrip)
@@ -561,8 +563,8 @@ private struct FlashAttractionShifterView: View {
     private func modeOptionButton(mode: AttractionMode) -> some View {
         let isCurrent = cameraVM.attractionMode == mode
         return Button {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            cameraVM.setAttractionMode(mode, trigger: true)
+            UISelectionFeedbackGenerator().selectionChanged()
+            cameraVM.setAttractionMode(mode, trigger: false)
             showStrip = false
         } label: {
             HStack(spacing: 10) {
@@ -604,8 +606,8 @@ private struct FlashAttractionShifterView: View {
                     .font(.title2.weight(.bold))
                     .foregroundStyle(.white)
             }
-            Text(L.flash)
-                .font(.system(size: 10, weight: .heavy))
+            Text(label(for: cameraVM.attractionMode))
+                .font(.caption2.weight(.heavy))
                 .foregroundStyle(.white)
         }
     }
