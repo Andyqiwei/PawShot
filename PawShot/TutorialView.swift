@@ -3,14 +3,14 @@ import SwiftUI
 struct TutorialView: View {
     let anchors: [Int: HighlightAnchor]
     @Binding var isVisible: Bool
+    @Binding var currentStep: Int
+    var suppressHighlight: Bool
     @EnvironmentObject var appSettings: AppSettingsStore
-
-    @State private var stepIndex: Int = 0
 
     private var palette: ThemePalette { appSettings.palette }
     private var L: L10n { appSettings.strings }
 
-    private static let stepKeys: [Int] = [0, 1, 2]
+    private static let stepKeys: [Int] = [0, 1, 2, 3, 4, 5]
     private let captionGap: CGFloat = 16
 
     var body: some View {
@@ -21,17 +21,15 @@ struct TutorialView: View {
                 EmptyView()
             }
         }
-        .onChange(of: isVisible) { _, new in
-            if new { stepIndex = 0 }
-        }
     }
 
     private var tutorialLayer: some View {
         GeometryReader { geo in
             let globalFrame = geo.frame(in: .global)
-            let stepKey = Self.stepKeys[min(stepIndex, Self.stepKeys.count - 1)]
+            let stepKey = Self.stepKeys[min(currentStep, Self.stepKeys.count - 1)]
             let globalRect = anchors[stepKey]?.rect ?? .zero
             let valid = globalRect.width > 1 && globalRect.height > 1
+            let effectiveValid = valid && !suppressHighlight
             let localRect = valid
                 ? globalRect.offsetBy(dx: -globalFrame.origin.x, dy: -globalFrame.origin.y)
                 : .zero
@@ -40,7 +38,7 @@ struct TutorialView: View {
             let size = geo.size
             let placeAbove = captionPlacementAbove(
                 rect: localRect,
-                valid: valid,
+                valid: effectiveValid,
                 size: size,
                 safe: safe
             )
@@ -49,14 +47,14 @@ struct TutorialView: View {
                 Color.black.opacity(0.8)
                     .ignoresSafeArea()
 
-                if valid {
+                if effectiveValid {
                     highlightBorder(rect: localRect)
                 }
 
                 captionRegion(
                     placeAbove: placeAbove,
                     rect: localRect,
-                    valid: valid,
+                    valid: effectiveValid,
                     size: size,
                     safe: safe
                 )
@@ -134,11 +132,11 @@ struct TutorialView: View {
     private var captionCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(captionTitle(for: stepIndex))
+                Text(captionTitle(for: currentStep))
                     .font(.headline.weight(.bold))
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.leading)
-                Text(captionBody(for: stepIndex))
+                Text(captionBody(for: currentStep))
                     .font(.subheadline)
                     .fontWeight(.medium)
                     .foregroundStyle(.primary.opacity(0.92))
@@ -146,13 +144,24 @@ struct TutorialView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            HStack {
+            HStack(alignment: .center, spacing: 12) {
+                Button {
+                    isVisible = false
+                } label: {
+                    Text(L.tutorialSkip)
+                        .font(.caption.weight(.medium))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+
                 Spacer(minLength: 0)
+
                 Button {
                     advanceStep()
                 } label: {
-                    Text(stepIndex < Self.stepKeys.count - 1 ? L.tutorialNext : L.tutorialDone)
+                    Text(currentStep < Self.stepKeys.count - 1 ? L.tutorialNext : L.tutorialDone)
                         .font(.subheadline.weight(.semibold))
+                        .frame(minWidth: 88)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(palette.recordYellow)
@@ -169,7 +178,10 @@ struct TutorialView: View {
         switch step {
         case 0: return L.tutorialStep0Title
         case 1: return L.tutorialStep1Title
-        default: return L.tutorialStep2Title
+        case 2: return L.tutorialStep2Title
+        case 3: return L.tutorialStep3Title
+        case 4: return L.tutorialStep4Title
+        default: return L.tutorialStep5Title
         }
     }
 
@@ -177,7 +189,10 @@ struct TutorialView: View {
         switch step {
         case 0: return L.tutorialStep0Body
         case 1: return L.tutorialStep1Body
-        default: return L.tutorialStep2Body
+        case 2: return L.tutorialStep2Body
+        case 3: return L.tutorialStep3Body
+        case 4: return L.tutorialStep4Body
+        default: return L.tutorialStep5Body
         }
     }
 
@@ -192,11 +207,10 @@ struct TutorialView: View {
     }
 
     private func advanceStep() {
-        if stepIndex < Self.stepKeys.count - 1 {
-            stepIndex += 1
+        if currentStep < Self.stepKeys.count - 1 {
+            currentStep += 1
         } else {
             isVisible = false
-            stepIndex = 0
         }
     }
 }

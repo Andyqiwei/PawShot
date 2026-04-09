@@ -11,6 +11,9 @@ struct ContentView: View {
     @State private var selectedTab: PawShotMainTab = .live
     @State private var highlightAnchors: [Int: HighlightAnchor] = [:]
     @State private var showTutorial = false
+    @State private var tutorialStep = 0
+    @State private var tutorialHighlightSuppressed = false
+    @State private var tutorialHighlightSuppressToken = UUID()
     @AppStorage("hasSeenTutorial") private var hasSeenTutorial = false
 
     private var L: L10n { appSettings.strings }
@@ -45,8 +48,13 @@ struct ContentView: View {
             .environmentObject(cameraVM)
 
             if showTutorial {
-                TutorialView(anchors: highlightAnchors, isVisible: $showTutorial)
-                    .environmentObject(appSettings)
+                TutorialView(
+                    anchors: highlightAnchors,
+                    isVisible: $showTutorial,
+                    currentStep: $tutorialStep,
+                    suppressHighlight: tutorialHighlightSuppressed
+                )
+                .environmentObject(appSettings)
             }
         }
         .onPreferenceChange(HighlightPreferenceKey.self) { highlightAnchors = $0 }
@@ -58,7 +66,42 @@ struct ContentView: View {
         }
         .onChange(of: selectedTab) { _, _ in refreshSessionForCurrentContext() }
         .onChange(of: showTutorial) { wasVisible, visible in
+            if visible {
+                tutorialStep = 0
+                applyTutorialTab(for: tutorialStep, suppressIfTabChanged: true)
+            }
             if wasVisible, !visible { hasSeenTutorial = true }
+        }
+        .onChange(of: tutorialStep) { _, newStep in
+            applyTutorialTab(for: newStep, suppressIfTabChanged: true)
+        }
+    }
+
+    private func tabForTutorialStep(_ step: Int) -> PawShotMainTab {
+        switch step {
+        case 0...2: return .live
+        case 3: return .gallery
+        case 4...5: return .studio
+        default: return .live
+        }
+    }
+
+    private func applyTutorialTab(for step: Int, suppressIfTabChanged: Bool) {
+        let target = tabForTutorialStep(step)
+        if selectedTab != target {
+            selectedTab = target
+            if suppressIfTabChanged {
+                tutorialHighlightSuppressed = true
+                let token = UUID()
+                tutorialHighlightSuppressToken = token
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    guard tutorialHighlightSuppressToken == token else { return }
+                    tutorialHighlightSuppressed = false
+                }
+            }
+        } else {
+            tutorialHighlightSuppressed = false
         }
     }
 

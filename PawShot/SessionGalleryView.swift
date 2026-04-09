@@ -49,6 +49,7 @@ struct SessionGalleryView: View {
                                         )
                                     }
                                 }
+                                .captureRect(3)
                             }
                         }
                     }

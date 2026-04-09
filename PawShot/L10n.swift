@@ -85,6 +85,38 @@ struct L10n {
     var tutorialNext: String { t(en: "Next", zh: "下一步", es: "Siguiente") }
     var tutorialDone: String { t(en: "Done", zh: "完成", es: "Listo") }
     var tutorialReplay: String { t(en: "Replay Tutorial", zh: "重新观看教程", es: "Volver a ver el tutorial") }
+    var tutorialSkip: String { t(en: "Skip tutorial", zh: "跳过教程", es: "Saltar tutorial") }
+
+    var tutorialStep3Title: String {
+        t(en: "Smart gallery", zh: "智能相册", es: "Galería inteligente")
+    }
+    var tutorialStep3Body: String {
+        t(
+            en: "All photos you take are saved to the system Photos library automatically. View them here, or select photos for batch delete.",
+            zh: "所有拍摄的照片都会自动保存到系统相册。你可以在这里查看，或选中照片进行批量删除。",
+            es: "Todas las fotos que tomes se guardan automáticamente en Fotos del sistema. Puedes verlas aquí o seleccionar fotos para borrarlas por lotes."
+        )
+    }
+    var tutorialStep4Title: String {
+        t(en: "Sound studio", zh: "声音工坊", es: "Estudio de sonido")
+    }
+    var tutorialStep4Body: String {
+        t(
+            en: "Tap the big record button to capture the sound you use to call your dog.",
+            zh: "点击巨大的录音按钮，录制你呼唤狗狗的专属声音。",
+            es: "Toca el gran botón de grabación para capturar el sonido con el que llamas a tu perro."
+        )
+    }
+    var tutorialStep5Title: String {
+        t(en: "Sound library", zh: "声音管理", es: "Biblioteca de sonidos")
+    }
+    var tutorialStep5Body: String {
+        t(
+            en: "Checked sounds play at random while shooting. Tap a list item to open the editor and adjust duration and volume.",
+            zh: "勾选的声音会在拍摄时随机播放。点击列表项可以进入剪辑模式，调整时长与音量。",
+            es: "Los sonidos marcados se reproducen al azar al grabar. Toca un elemento de la lista para abrir el editor y ajustar duración y volumen."
+        )
+    }
 
     // MARK: - Gallery
 

@@ -27,6 +27,7 @@ struct SoundLibraryView: View {
                                 .listRowInsets(EdgeInsets(top: 8, leading: 18, bottom: 12, trailing: 18))
                                 .listRowSeparator(.hidden)
                                 .listRowBackground(Color.clear)
+                                .captureRect(4)
                         }
                         .id("studioTop")
 
@@ -37,6 +38,7 @@ struct SoundLibraryView: View {
                             .listRowInsets(EdgeInsets(top: 4, leading: 20, bottom: 8, trailing: 20))
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
+                            .captureRect(5)
                         }
 
                         if soundManager.sounds.isEmpty {
@@ -48,16 +50,20 @@ struct SoundLibraryView: View {
                                     .padding(.vertical, 24)
                                     .listRowBackground(Color.clear)
                                     .listRowSeparator(.hidden)
+                                    .captureRect(5)
                             }
                         } else {
                             Section {
-                                ForEach(soundManager.sounds) { item in
-                                    soundRow(item)
-                                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-                                        .listRowSeparator(.hidden)
-                                        .listRowBackground(Color.clear)
+                                Group {
+                                    ForEach(soundManager.sounds) { item in
+                                        soundRow(item)
+                                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                                            .listRowSeparator(.hidden)
+                                            .listRowBackground(Color.clear)
+                                    }
+                                    .onDelete(perform: soundManager.deleteSound)
                                 }
-                                .onDelete(perform: soundManager.deleteSound)
+                                .captureRect(5)
                             }
                         }
                     }
